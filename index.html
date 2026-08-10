@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FREEOFIS — Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<aside class="sidebar">
+  <div class="brand">FREEOFIS</div>
+  <div class="profile"><div class="avatar">F</div><div><b>My Workspace</b><small>Personal account</small></div></div>
+  <nav>
+    <button class="nav active" data-section="home">⌂ <span>Home</span></button>
+    <button class="nav" data-section="records">▤ <span>Records</span></button>
+    <button class="nav" data-section="inventory">▥ <span>Inventory</span></button>
+    <button class="nav" data-section="media">◉ <span>Media</span></button>
+    <button class="nav" data-section="documents">▱ <span>Documents</span></button>
+    <button class="nav" data-section="tools">✦ <span>AI Tools</span></button>
+  </nav>
+  <div class="bottom">
+    <button class="nav" data-section="settings">⚙ <span>Settings</span></button>
+    <button class="nav" data-section="help">? <span>Help</span></button>
+  </div>
+</aside>
+
+<main>
+<header class="topbar">
+  <div><p>WELCOME TO FREEOFIS</p><h1 id="title">Your workspace</h1></div>
+  <div class="user">F</div>
+</header>
+
+<section id="home" class="section show">
+  <div class="hero">
+    <div><h2>Everything you need, in one place.</h2><p>Keep your business records, documents and media organised without complicated software.</p></div>
+    <button class="primary" data-section="records">Get started</button>
+  </div>
+  <div class="quick">
+    <button class="card" data-section="records"><i>＋</i><b>Add a record</b><small>Sales, expenses or notes</small></button>
+    <button class="card" data-section="inventory"><i>▥</i><b>Inventory</b><small>See what you have in stock</small></button>
+    <button class="card" data-section="media"><i>◉</i><b>Capture media</b><small>Photos and videos</small></button>
+    <button class="card" data-section="tools"><i>✦</i><b>AI tools</b><small>Turn rough notes into clean work</small></button>
+  </div>
+  <div class="panel"><h3>At a glance</h3><p>Your workspace summary will appear here.</p>
+    <div class="stats"><div><small>Records</small><strong>0</strong></div><div><small>Items</small><strong>0</strong></div><div><small>Documents</small><strong>0</strong></div><div><small>Media</small><strong>0</strong></div></div>
+  </div>
+</section>
+
+<section id="records" class="section"><div class="heading"><h2>Records</h2><p>Simple business records without complicated accounting software.</p></div><div class="empty"><div class="big">▤</div><h3>No records yet</h3><p>Later you will be able to record sales, expenses, debts and everyday transactions here.</p><button class="primary">Add first record</button></div></section>
+<section id="inventory" class="section"><div class="heading"><h2>Inventory</h2><p>Keep track of products and supplies.</p></div><div class="empty"><div class="big">▥</div><h3>Your inventory is empty</h3><p>Later, the camera and AI can help read handwritten stock records.</p><button class="primary">Add item</button></div></section>
+<section id="media" class="section"><div class="heading"><h2>Media</h2><p>A simple workspace for journalists and other media professionals.</p></div><div class="twocol"><div class="feature"><div class="big">◉</div><h3>Camera</h3><p>Capture photos and videos directly from supported devices.</p><button class="primary">Open camera</button></div><div class="feature"><div class="big">▱</div><h3>Media archive</h3><p>Organise captured files and notes in one workspace.</p><button class="secondary">View archive</button></div></div></section>
+<section id="documents" class="section"><div class="heading"><h2>Documents</h2><p>Create, store and organise everyday documents.</p></div><div class="empty"><div class="big">▱</div><h3>No documents yet</h3><p>This area will later support reports, letters, invoices and other useful documents.</p><button class="primary">Create document</button></div></section>
+<section id="tools" class="section"><div class="heading"><h2>AI Tools</h2><p>Automation designed for people who do not want complicated software.</p></div><div class="twocol"><div class="feature"><div class="big">✦</div><h3>Clean up rough notes</h3><p>Take a photo of handwritten figures and turn them into a clean digital record.</p><button class="primary">Coming in Phase 2</button></div><div class="feature"><div class="big">✎</div><h3>Writing assistant</h3><p>Turn notes into structured reports, summaries or drafts.</p><button class="secondary">Coming later</button></div></div></section>
+<section id="settings" class="section"><div class="heading"><h2>Settings</h2><p>Manage your FREEOFIS workspace.</p></div><div class="empty"><div class="big">⚙</div><h3>Settings will appear here</h3><p>Account and workspace settings will be added later.</p></div></section>
+<section id="help" class="section"><div class="heading"><h2>Help</h2><p>FREEOFIS is being designed to be simple enough for first-time users.</p></div><div class="empty"><div class="big">?</div><h3>Need help?</h3><p>Guides and support will be added in a later phase.</p></div></section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
