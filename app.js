@@ -152,7 +152,67 @@ controls.forEach(function(control) {
     }
   });
 });
+  document.querySelectorAll('button').forEach(function(button) {
+    if (button.textContent.trim().toLowerCase() === 'add item') {
+      button.addEventListener('click', function() {
+        const inventorySection = document.getElementById('inventory');
 
+        if (!inventorySection) return;
+
+        if (document.getElementById('inventory-form')) {
+          return;
+        }
+
+        const form = document.createElement('form');
+        form.id = 'inventory-form';
+        form.style.marginTop = '20px';
+
+        form.innerHTML = `
+          <h3>Add Item</h3>
+
+          <label>Item name</label><br>
+          <input id="inventory-name" type="text" placeholder="Enter item name" required>
+          <br><br>
+
+          <label>Quantity</label><br>
+          <input id="inventory-quantity" type="number" placeholder="Enter quantity" required>
+          <br><br>
+
+          <label>Price</label><br>
+          <input id="inventory-price" type="number" placeholder="Enter price" required>
+          <br><br>
+
+          <button type="submit">Save Item</button>
+        `;
+
+        inventorySection.appendChild(form);
+
+        form.addEventListener('submit', function(event) {
+          event.preventDefault();
+
+          const item = {
+            name: document.getElementById('inventory-name').value,
+            quantity: document.getElementById('inventory-quantity').value,
+            price: document.getElementById('inventory-price').value
+          };
+
+          const inventory =
+            JSON.parse(localStorage.getItem('freeofis_inventory') || '[]');
+
+          inventory.push(item);
+
+          localStorage.setItem(
+            'freeofis_inventory',
+            JSON.stringify(inventory)
+          );
+
+          alert('Item saved successfully.');
+
+          form.remove();
+        });
+      });
+    }
+  });
 renderRecords();
 
   show('home');
