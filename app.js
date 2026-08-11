@@ -228,7 +228,67 @@ function renderInventory() {
 
   const empty = inventorySection.querySelector('.empty');
   if (empty) empty.remove();
+let addButton = inventorySection.querySelector('.add-inventory-btn');
 
+if (!addButton) {
+  addButton = document.createElement('button');
+  addButton.className = 'add-inventory-btn';
+  addButton.textContent = '+ Add Inventory Item';
+  addButton.style.cssText = 'padding:12px 18px;margin:16px 0;background:#111827;color:white;border:none;border-radius:8px;cursor:pointer;font-size:16px;';
+
+  inventorySection.appendChild(addButton);
+
+  addButton.addEventListener('click', function () {
+    if (inventorySection.querySelector('.inventory-form')) return;
+
+    const form = document.createElement('form');
+    form.className = 'inventory-form';
+    form.style.cssText = 'padding:16px;margin:12px 0;border:1px solid #ddd;border-radius:8px;';
+
+    form.innerHTML = `
+      <label>Item Name</label><br>
+      <input id="inventory-name" type="text" placeholder="e.g. Boubou" required style="padding:10px;width:90%;margin:6px 0 12px;"><br>
+
+      <label>Quantity</label><br>
+      <input id="inventory-quantity" type="number" placeholder="e.g. 10" required style="padding:10px;width:90%;margin:6px 0 12px;"><br>
+
+      <label>Price</label><br>
+      <input id="inventory-price" type="number" placeholder="e.g. 7000" required style="padding:10px;width:90%;margin:6px 0 12px;"><br>
+
+      <button type="submit" style="padding:10px 16px;background:#111827;color:white;border:none;border-radius:6px;cursor:pointer;">
+        Save Item
+      </button>
+    `;
+
+    inventorySection.insertBefore(form, addButton);
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+
+      const item = {
+        name: document.getElementById('inventory-name').value,
+        quantity: document.getElementById('inventory-quantity').value,
+        price: document.getElementById('inventory-price').value
+      };
+
+      const inventory = JSON.parse(
+        localStorage.getItem('freeofis_inventory') || '[]'
+      );
+
+      inventory.push(item);
+
+      localStorage.setItem(
+        'freeofis_inventory',
+        JSON.stringify(inventory)
+      );
+
+      alert('Item saved successfully.');
+
+      form.remove();
+      renderInventory();
+    });
+  });
+}
   let list = document.getElementById('inventory-list');
 
   if (!list) {
