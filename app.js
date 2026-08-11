@@ -102,12 +102,58 @@ document.addEventListener('DOMContentLoaded', function () {
           );
 
           alert('Record saved successfully.');
-
+renderRecords();
           form.remove();
         });
       });
     }
   });
+function renderRecords() {
+  const section = document.getElementById('records');
+  if (!section) return;
+
+  const records = JSON.parse(
+    localStorage.getItem('freeofis_records') || '[]'
+  );
+
+  let display = document.getElementById('records-display');
+
+  if (!display) {
+    display = document.createElement('div');
+    display.id = 'records-display';
+    section.appendChild(display);
+  }
+
+  if (records.length === 0) {
+    display.innerHTML = '';
+    return;
+  }
+
+  display.innerHTML = `
+    <h3>Saved Records</h3>
+    <div>
+      ${records.map((record, index) => `
+        <div style="border:1px solid #ddd;padding:12px;margin:10px 0;border-radius:8px;">
+          <strong>${record.type || 'Record'}</strong><br>
+          Amount: ₦${Number(record.amount || 0).toLocaleString()}<br>
+          Description: ${record.description || ''}<br>
+          Date: ${record.date || ''}<br>
+          <small>Record #${index + 1}</small>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+controls.forEach(function(control) {
+  control.addEventListener('click', function() {
+    if (control.dataset.section === 'records') {
+      setTimeout(renderRecords, 50);
+    }
+  });
+});
+
+renderRecords();
 
   show('home');
 });
