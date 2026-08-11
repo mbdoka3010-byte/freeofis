@@ -190,26 +190,28 @@ controls.forEach(function(control) {
         form.addEventListener('submit', function(event) {
           event.preventDefault();
 
-          const item = {
-            name: document.getElementById('inventory-name').value,
-            quantity: document.getElementById('inventory-quantity').value,
-            price: document.getElementById('inventory-price').value
-          };
+         const item = {
+    name: document.getElementById('inventory-name').value,
+    quantity: document.getElementById('inventory-quantity').value,
+    price: document.getElementById('inventory-price').value
+};
 
-          const inventory =
-            JSON.parse(localStorage.getItem('freeofis_inventory') || '[]');
+const inventory = JSON.parse(
+    localStorage.getItem('freeofis_inventory') || '[]'
+);
 
-          inventory.push(item);
+inventory.push(item);
 
-          localStorage.setItem(
-            'freeofis_inventory',
-            JSON.stringify(inventory)
-          );
+localStorage.setItem(
+    'freeofis_inventory',
+    JSON.stringify(inventory)
+);
 
-          alert('Item saved successfully.');
+alert('Item saved successfully.');
 
-          form.remove();
-        });
+form.remove();
+
+renderInventory();         });
       });
     }
   });
