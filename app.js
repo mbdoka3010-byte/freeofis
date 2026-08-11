@@ -214,6 +214,39 @@ controls.forEach(function(control) {
     }
   });
 renderRecords();
+function renderInventory() {
+  const inventorySection = document.getElementById('inventory');
+  if (!inventorySection) return;
 
+  const inventory = JSON.parse(
+    localStorage.getItem('freeofis_inventory') || '[]'
+  );
+
+  if (inventory.length === 0) return;
+
+  const empty = inventorySection.querySelector('.empty');
+  if (empty) empty.remove();
+
+  let list = document.getElementById('inventory-list');
+
+  if (!list) {
+    list = document.createElement('div');
+    list.id = 'inventory-list';
+    inventorySection.appendChild(list);
+  }
+
+  list.innerHTML = inventory.map(function(item, index) {
+    return `
+      <div style="padding:16px;margin-top:12px;border:1px solid #ddd;border-radius:10px;">
+        <strong>${item.name || ''}</strong><br>
+        Quantity: ${item.quantity || 0}<br>
+        Price: ${item.price || 0}<br>
+        <small>Item #${index + 1}</small>
+      </div>
+    `;
+  }).join('');
+}
+
+renderInventory();
   show('home');
 });
