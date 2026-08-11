@@ -297,16 +297,76 @@ if (!addButton) {
     inventorySection.appendChild(list);
   }
 
-  list.innerHTML = inventory.map(function(item, index) {
+ list.innerHTML = inventory.map(function(item, index) {
     return `
-      <div style="padding:16px;margin-top:12px;border:1px solid #ddd;border-radius:10px;">
-        <strong>${item.name || ''}</strong><br>
-        Quantity: ${item.quantity || 0}<br>
-        Price: ${item.price || 0}<br>
-        <small>Item #${index + 1}</small>
-      </div>
+        <div style="padding:16px;margin-top:12px;border:1px solid #ddd;border-radius:10px;">
+            <strong>${item.name || ''}</strong><br>
+            Quantity: ${item.quantity || 0}<br>
+            Price: ₦${item.price || 0}<br>
+            <small>Item #${index + 1}</small><br><br>
+
+            <button type="button"
+                class="edit-inventory-btn"
+                data-index="${index}"
+                style="padding:8px 12px;margin-right:8px;background:#111827;color:white;border:none;border-radius:6px;cursor:pointer;">
+                Edit
+            </button>
+
+            <button type="button"
+                class="delete-inventory-btn"
+                data-index="${index}"
+                style="padding:8px 12px;background:#dc2626;color:white;border:none;border-radius:6px;cursor:pointer;">
+                Delete
+            </button>
+        </div>
     `;
-  }).join('');
+}).join('');
+
+list.querySelectorAll('.edit-inventory-btn').forEach(function(button) {
+    button.addEventListener('click', function() {
+        const index = Number(this.dataset.index);
+        const item = inventory[index];
+
+        const name = prompt('Item name:', item.name || '');
+        if (name === null) return;
+
+        const quantity = prompt('Quantity:', item.quantity || 0);
+        if (quantity === null) return;
+
+        const price = prompt('Price:', item.price || 0);
+        if (price === null) return;
+
+        inventory[index] = {
+            name: name,
+            quantity: quantity,
+            price: price
+        };
+
+        localStorage.setItem(
+            'freeofis_inventory',
+            JSON.stringify(inventory)
+        );
+
+        renderInventory();
+    });
+});
+
+list.querySelectorAll('.delete-inventory-btn').forEach(function(button) {
+    button.addEventListener('click', function() {
+        const index = Number(this.dataset.index);
+
+        if (!confirm('Delete this inventory item?')) return;
+
+        inventory.splice(index, 1);
+
+        localStorage.setItem(
+            'freeofis_inventory',
+            JSON.stringify(inventory)
+        );
+
+        renderInventory();
+    });
+});
 }
 
 renderInventory();
