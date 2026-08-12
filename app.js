@@ -337,6 +337,12 @@ ${totalItems.toLocaleString()}<br><br>
                 Edit
             </button>
 
+           <button type="button"
+    class="sell-inventory-btn"
+    data-index="${index}"
+    style="padding:8px 12px;margin-right:8px;background:#198754;color:white;border:none;border-radius:6px;cursor:pointer;">
+    Sell
+</button>
             <button type="button"
                 class="delete-inventory-btn"
                 data-index="${index}"
@@ -393,7 +399,54 @@ list.querySelectorAll('.delete-inventory-btn').forEach(function(button) {
     });
 });
 }
+inventorySection.addEventListener('click', function (event) {
+    const button = event.target.closest('.sell-inventory-btn');
 
+    if (!button) {
+        return;
+    }
+
+    const index = Number(button.dataset.index);
+    const item = inventory[index];
+
+    if (!item) {
+        return;
+    }
+
+    const currentQuantity = Number(item.quantity) || 0;
+
+    if (currentQuantity <= 0) {
+        alert('This item is out of stock.');
+        return;
+    }
+
+    const soldQuantity = Number(
+        prompt(
+            'How many units of ' +
+            (item.name || 'this item') +
+            ' were sold?\nAvailable: ' +
+            currentQuantity
+        )
+    );
+
+    if (!Number.isInteger(soldQuantity) || soldQuantity <= 0) {
+        return;
+    }
+
+    if (soldQuantity > currentQuantity) {
+        alert('You cannot sell more than the available quantity.');
+        return;
+    }
+
+    item.quantity = currentQuantity - soldQuantity;
+
+    localStorage.setItem(
+        'freeofis_inventory',
+        JSON.stringify(inventory)
+    );
+
+    renderInventory();
+});
 renderInventory();
   show('home');
 });
