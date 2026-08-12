@@ -308,16 +308,7 @@ status:'completed'
 z.out.forEach(x=>item(x.productId).quantity-=x.quantity);
 sales.push(s);
 
-if(paid&&cid)pay.push({
-id:uid('PAY'),
-customerId:cid,
-saleId:s.id,
-amount:paid,
-date:s.date,
-method:s.method,
-reference:s.reference,
-status:'completed'
-});
+
 
 save(K.sales,sales);
 save(K.inv,inv);
