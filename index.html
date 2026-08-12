@@ -1,59 +1,459 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FREEOFIS — Dashboard</title>
-<link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FREEOFIS - Workspace</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
+
 <aside class="sidebar">
+
   <div class="brand">FREEOFIS</div>
-  <div class="profile"><div class="avatar">F</div><div><b>My Workspace</b><small>Personal account</small></div></div>
-  <nav>
-    <button class="nav active" data-section="home">⌂ <span>Home</span></button>
-    <button class="nav" data-section="records">▤ <span>Records</span></button>
-    <button class="nav" data-section="inventory">▥ <span>Inventory</span></button>
-    <button class="nav" data-section="media">◉ <span>Media</span></button>
-    <button class="nav" data-section="documents">▱ <span>Documents</span></button>
-    <button class="nav" data-section="tools">✦ <span>AI Tools</span></button>
-  </nav>
-  <div class="bottom">
-    <button class="nav" data-section="settings">⚙ <span>Settings</span></button>
-    <button class="nav" data-section="help">? <span>Help</span></button>
+
+  <div class="profile">
+    <div class="avatar">F</div>
+    <div>
+      <b>My Workspace</b>
+      <small>Personal account</small>
+    </div>
   </div>
+
+  <nav>
+
+    <button class="nav active" data-section="home">
+      🏠 <span>Home</span>
+    </button>
+
+    <button class="nav" data-section="business">
+      💼 <span>Business</span>
+    </button>
+
+    <button class="nav" data-section="student">
+      🎓 <span>Student</span>
+    </button>
+
+    <button class="nav" data-section="media">
+      🎥 <span>Media</span>
+    </button>
+
+    <button class="nav" data-section="office">
+      🗂️ <span>Office</span>
+    </button>
+
+    <button class="nav" data-section="personal">
+      👤 <span>Personal</span>
+    </button>
+
+  </nav>
+
+  <div class="bottom">
+
+    <button class="nav" data-section="documents">
+      📄 <span>Documents</span>
+    </button>
+
+    <button class="nav" data-section="tools">
+      ✦ <span>AI Tools</span>
+    </button>
+
+    <button class="nav" data-section="settings">
+      ⚙ <span>Settings</span>
+    </button>
+
+    <button class="nav" data-section="help">
+      ? <span>Help</span>
+    </button>
+
+  </div>
+
 </aside>
 
+
 <main>
-<header class="topbar">
-  <div><p>WELCOME TO FREEOFIS</p><h1 id="title">Your workspace</h1></div>
-  <div class="user">F</div>
-</header>
 
-<section id="home" class="section show">
-  <div class="hero">
-    <div><h2>Everything you need, in one place.</h2><p>Keep your business records, documents and media organised without complicated software.</p></div>
-    <button class="primary" data-section="records">Get started</button>
-  </div>
-  <div class="quick">
-    <button class="card" data-section="records"><i>＋</i><b>Add a record</b><small>Sales, expenses or notes</small></button>
-    <button class="card" data-section="inventory"><i>▥</i><b>Inventory</b><small>See what you have in stock</small></button>
-    <button class="card" data-section="media"><i>◉</i><b>Capture media</b><small>Photos and videos</small></button>
-    <button class="card" data-section="tools"><i>✦</i><b>AI tools</b><small>Turn rough notes into clean work</small></button>
-  </div>
-  <div class="panel"><h3>At a glance</h3><p>Your workspace summary will appear here.</p>
-    <div class="stats"><div><small>Records</small><strong>0</strong></div><div><small>Items</small><strong>0</strong></div><div><small>Documents</small><strong>0</strong></div><div><small>Media</small><strong>0</strong></div></div>
-  </div>
-</section>
+  <header class="topbar">
+    <div>
+      <div>WELCOME TO FREEOFIS</div>
+      <h1 id="title">Your workspace</h1>
+    </div>
 
-<section id="records" class="section"><div class="heading"><h2>Records</h2><p>Simple business records without complicated accounting software.</p></div><div class="empty"><div class="big">▤</div><h3>No records yet</h3><p>Later you will be able to record sales, expenses, debts and everyday transactions here.</p><button class="primary">Add first record</button></div></section>
-<section id="inventory" class="section"><div class="heading"><h2>Inventory</h2><p>Keep track of products and supplies.</p></div><div class="empty"><div class="big">▥</div><h3>Your inventory is empty</h3><p>Later, the camera and AI can help read handwritten stock records.</p><button class="primary">Add item</button></div></section>
-<section id="media" class="section"><div class="heading"><h2>Media</h2><p>A simple workspace for journalists and other media professionals.</p></div><div class="twocol"><div class="feature"><div class="big">◉</div><h3>Camera</h3><p>Capture photos and videos directly from supported devices.</p><button class="primary">Open camera</button></div><div class="feature"><div class="big">▱</div><h3>Media archive</h3><p>Organise captured files and notes in one workspace.</p><button class="secondary">View archive</button></div></div></section>
-<section id="documents" class="section"><div class="heading"><h2>Documents</h2><p>Create, store and organise everyday documents.</p></div><div class="empty"><div class="big">▱</div><h3>No documents yet</h3><p>This area will later support reports, letters, invoices and other useful documents.</p><button class="primary">Create document</button></div></section>
-<section id="tools" class="section"><div class="heading"><h2>AI Tools</h2><p>Automation designed for people who do not want complicated software.</p></div><div class="twocol"><div class="feature"><div class="big">✦</div><h3>Clean up rough notes</h3><p>Take a photo of handwritten figures and turn them into a clean digital record.</p><button class="primary">Coming in Phase 2</button></div><div class="feature"><div class="big">✎</div><h3>Writing assistant</h3><p>Turn notes into structured reports, summaries or drafts.</p><button class="secondary">Coming later</button></div></div></section>
-<section id="settings" class="section"><div class="heading"><h2>Settings</h2><p>Manage your FREEOFIS workspace.</p></div><div class="empty"><div class="big">⚙</div><h3>Settings will appear here</h3><p>Account and workspace settings will be added later.</p></div></section>
-<section id="help" class="section"><div class="heading"><h2>Help</h2><p>FREEOFIS is being designed to be simple enough for first-time users.</p></div><div class="empty"><div class="big">?</div><h3>Need help?</h3><p>Guides and support will be added in a later phase.</p></div></section>
+    <div class="user">F</div>
+  </header>
+
+
+  <!-- MAIN FREEOFIS HOME -->
+
+  <section id="home" class="section show">
+
+    <div class="hero">
+
+      <div>
+        <h2>Everything you need, in one place.</h2>
+
+        <p>
+          Choose a workspace designed for the way you work.
+        </p>
+      </div>
+
+    </div>
+
+
+    <div class="quick">
+
+      <button class="card" data-section="business">
+        💼
+        <b>Business</b>
+        <small>
+          Sales, inventory, customers, credit and business records.
+        </small>
+      </button>
+
+      <button class="card" data-section="student">
+        🎓
+        <b>Student</b>
+        <small>
+          Study materials, courses, assignments and academic records.
+        </small>
+      </button>
+
+      <button class="card" data-section="media">
+        🎥
+        <b>Media</b>
+        <small>
+          Stories, contacts, publications and media resources.
+        </small>
+      </button>
+
+      <button class="card" data-section="office">
+        🗂️
+        <b>Office</b>
+        <small>
+          Documents, tasks, meetings and office records.
+        </small>
+      </button>
+
+      <button class="card" data-section="personal">
+        👤
+        <b>Personal</b>
+        <small>
+          Personal records, notes, plans and everyday organisation.
+        </small>
+      </button>
+
+    </div>
+
+  </section>
+
+
+  <!-- BUSINESS WORKSPACE -->
+
+  <section id="business" class="section">
+
+    <div class="heading">
+      <h2>Business</h2>
+
+      <p>
+        Manage your business from one workspace.
+      </p>
+    </div>
+
+    <div class="quick">
+
+      <button class="card" data-section="records">
+        🧾
+        <b>Sales & Records</b>
+        <small>
+          Record sales, expenses, payments and other transactions.
+        </small>
+      </button>
+
+      <button class="card" data-section="inventory">
+        📦
+        <b>Inventory</b>
+        <small>
+          Track products, quantities, prices and stock value.
+        </small>
+      </button>
+
+      <button class="card">
+        👥
+        <b>Customers</b>
+        <small>
+          Customer profiles, purchase history and account balances.
+        </small>
+      </button>
+
+      <button class="card">
+        💳
+        <b>Credit & Debtors</b>
+        <small>
+          Track credit purchases, part payments and outstanding balances.
+        </small>
+      </button>
+
+      <button class="card">
+        🧾
+        <b>Receipts</b>
+        <small>
+          Create and manage professional business receipts.
+        </small>
+      </button>
+
+      <button class="card">
+        📊
+        <b>Reports</b>
+        <small>
+          Understand sales, expenses, stock and business performance.
+        </small>
+      </button>
+
+    </div>
+
+  </section>
+
+
+  <!-- STUDENT WORKSPACE -->
+
+  <section id="student" class="section">
+
+    <div class="heading">
+      <h2>Student</h2>
+
+      <p>
+        Tools for studying, organising academic work and managing school records.
+      </p>
+    </div>
+
+    <div class="quick">
+
+      <button class="card">
+        📚
+        <b>Courses</b>
+        <small>Organise courses and subjects.</small>
+      </button>
+
+      <button class="card">
+        📝
+        <b>Assignments</b>
+        <small>Track assignments and deadlines.</small>
+      </button>
+
+      <button class="card">
+        📖
+        <b>Notes</b>
+        <small>Store and organise study notes.</small>
+      </button>
+
+      <button class="card">
+        🗓️
+        <b>Timetable</b>
+        <small>Manage classes and academic schedules.</small>
+      </button>
+
+    </div>
+
+  </section>
+
+
+  <!-- MEDIA WORKSPACE -->
+
+  <section id="media" class="section">
+
+    <div class="heading">
+      <h2>Media</h2>
+
+      <p>
+        A workspace for journalists, bloggers, publishers and media professionals.
+      </p>
+    </div>
+
+    <div class="quick">
+
+      <button class="card">
+        📰
+        <b>Stories</b>
+        <small>Organise stories and articles.</small>
+      </button>
+
+      <button class="card">
+        👥
+        <b>Contacts</b>
+        <small>Manage sources, contacts and contributors.</small>
+      </button>
+
+      <button class="card">
+        🎥
+        <b>Media Assets</b>
+        <small>Organise photos, videos and other media.</small>
+      </button>
+
+      <button class="card">
+        📋
+        <b>Publications</b>
+        <small>Track published and pending materials.</small>
+      </button>
+
+    </div>
+
+  </section>
+
+
+  <!-- OFFICE WORKSPACE -->
+
+  <section id="office" class="section">
+
+    <div class="heading">
+      <h2>Office</h2>
+
+      <p>
+        Organise everyday office work without unnecessary complexity.
+      </p>
+    </div>
+
+    <div class="quick">
+
+      <button class="card">
+        📄
+        <b>Documents</b>
+        <small>Create and organise office documents.</small>
+      </button>
+
+      <button class="card">
+        ✅
+        <b>Tasks</b>
+        <small>Track work that needs to be completed.</small>
+      </button>
+
+      <button class="card">
+        🗓️
+        <b>Meetings</b>
+        <small>Keep track of meetings and schedules.</small>
+      </button>
+
+      <button class="card">
+        📋
+        <b>Records</b>
+        <small>Maintain important office records.</small>
+      </button>
+
+    </div>
+
+  </section>
+
+
+  <!-- PERSONAL WORKSPACE -->
+
+  <section id="personal" class="section">
+
+    <div class="heading">
+      <h2>Personal</h2>
+
+      <p>
+        Organise your personal information, plans and everyday records.
+      </p>
+    </div>
+
+    <div class="quick">
+
+      <button class="card">
+        📝
+        <b>Notes</b>
+        <small>Keep personal notes and ideas.</small>
+      </button>
+
+      <button class="card">
+        📋
+        <b>Records</b>
+        <small>Keep useful personal records.</small>
+      </button>
+
+      <button class="card">
+        🗓️
+        <b>Plans</b>
+        <small>Organise plans and important dates.</small>
+      </button>
+
+    </div>
+
+  </section>
+
+
+  <!-- EXISTING BUSINESS RECORDS -->
+
+  <section id="records" class="section">
+    <div class="heading">
+      <h2>Records</h2>
+      <p>Business records, sales, expenses and other transactions.</p>
+    </div>
+  </section>
+
+
+  <!-- EXISTING INVENTORY SYSTEM -->
+
+  <section id="inventory" class="section">
+
+    <div class="heading">
+      <h2>Inventory</h2>
+      <p>Keep track of products and supplies.</p>
+    </div>
+
+  </section>
+
+
+  <!-- DOCUMENTS -->
+
+  <section id="documents" class="section">
+
+    <div class="heading">
+      <h2>Documents</h2>
+      <p>Create, store and organise your documents.</p>
+    </div>
+
+  </section>
+
+
+  <!-- AI TOOLS -->
+
+  <section id="tools" class="section">
+
+    <div class="heading">
+      <h2>AI Tools</h2>
+      <p>Tools designed to simplify everyday work.</p>
+    </div>
+
+  </section>
+
+
+  <!-- SETTINGS -->
+
+  <section id="settings" class="section">
+
+    <div class="heading">
+      <h2>Settings</h2>
+      <p>Manage your Freeofis workspace.</p>
+    </div>
+
+  </section>
+
+
+  <!-- HELP -->
+
+  <section id="help" class="section">
+
+    <div class="heading">
+      <h2>Help</h2>
+      <p>Get help using Freeofis.</p>
+    </div>
+
+  </section>
+
+
 </main>
+
 <script src="app.js"></script>
+
 </body>
 </html>
