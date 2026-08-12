@@ -448,7 +448,59 @@ const inventory = JSON.parse(localStorage.getItem('freeofis_inventory') || '[]')
         alert('You cannot sell more than the available quantity.');
         return;
     }
+const paymentType = prompt(
+    'Payment type?\nEnter CASH or CREDIT:'
+);
 
+if (!paymentType) {
+    return;
+}
+
+const payment = paymentType.trim().toLowerCase();
+
+if (payment !== 'cash' && payment !== 'credit') {
+    alert('Please enter CASH or CREDIT.');
+    return;
+}
+
+const saleAmount = soldQuantity * Number(item.price || 0);
+
+const sales = JSON.parse(
+    localStorage.getItem('freeofis_sales') || '[]'
+);
+
+if (payment === 'credit') {
+    const customerName = prompt('Customer name:');
+
+    if (!customerName) {
+        return;
+    }
+
+    sales.push({
+        item: item.name,
+        quantity: soldQuantity,
+        amount: saleAmount,
+        payment: 'credit',
+        customer: customerName,
+        date: new Date().toISOString()
+    });
+} else {
+    sales.push({
+        item: item.name,
+        quantity: soldQuantity,
+        amount: saleAmount,
+        payment: 'cash',
+        customer: '',
+        date: new Date().toISOString()
+    });
+}
+
+localStorage.setItem(
+    'freeofis_sales',
+    JSON.stringify(sales)
+);
+
+    
     item.quantity = currentQuantity - soldQuantity;
 
     localStorage.setItem(
