@@ -289,6 +289,25 @@ if (!addButton) {
     });
   });
 }
+const totalStockValue = inventory.reduce(function(total, item) {
+    return total + (Number(item.quantity) || 0) * (Number(item.price) || 0);
+}, 0);
+
+let summary = inventorySection.querySelector('.inventory-summary');
+
+if (!summary) {
+    summary = document.createElement('div');
+    summary.className = 'inventory-summary';
+    inventorySection.insertBefore(summary, inventorySection.querySelector('#inventory-list'));
+}
+
+summary.innerHTML = `
+    <div style="padding:16px;margin:12px 0;border:1px solid #ddd;border-radius:10px;background:#f5f5f5;">
+        <strong>Total Stock Value</strong><br>
+        ₦${totalStockValue.toLocaleString()}
+    </div>
+`;
+ 
   let list = document.getElementById('inventory-list');
 
   if (!list) {
