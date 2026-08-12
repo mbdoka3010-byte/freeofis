@@ -289,7 +289,10 @@ if (!addButton) {
     });
   });
 }
-const totalStockValue = inventory.reduce(function(total, item) {
+const totalItems = inventory.reduce(function(total, item) {
+    return total + (Number(item.quantity) || 0);
+}, 0);
+  const totalStockValue = inventory.reduce(function(total, item) {
     return total + (Number(item.quantity) || 0) * (Number(item.price) || 0);
 }, 0);
 
@@ -303,6 +306,8 @@ if (!summary) {
 
 summary.innerHTML = `
     <div style="padding:16px;margin:12px 0;border:1px solid #ddd;border-radius:10px;background:#f5f5f5;">
+     <strong>Total Items</strong><br>
+${totalItems.toLocaleString()}<br><br>  
         <strong>Total Stock Value</strong><br>
         ₦${totalStockValue.toLocaleString()}
     </div>
