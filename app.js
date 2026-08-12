@@ -312,15 +312,51 @@ if (!summary) {
     inventorySection.insertBefore(summary, inventorySection.querySelector('#inventory-list'));
 }
 
+const sales = JSON.parse(
+    localStorage.getItem('freeofis_sales') || '[]'
+);
+
+const totalSold = sales.reduce(function(total, sale) {
+    return total + (Number(sale.quantity) || 0);
+}, 0);
+
+const cashSales = sales.reduce(function(total, sale) {
+    return sale.payment === 'cash'
+        ? total + (Number(sale.amount) || 0)
+        : total;
+}, 0);
+
+const creditSales = sales.reduce(function(total, sale) {
+    return sale.payment === 'credit'
+        ? total + (Number(sale.amount) || 0)
+        : total;
+}, 0);
 summary.innerHTML = `
     <div style="padding:16px;margin:12px 0;border:1px solid #ddd;border-radius:10px;background:#f5f5f5;">
-     <strong>Total Items</strong><br>
-${totalItems.toLocaleString()}<br><br>  
+
+        <strong>Total Items Remaining</strong><br>
+        ${totalItems.toLocaleString()}<br><br>
+
         <strong>Total Stock Value</strong><br>
-        ₦${totalStockValue.toLocaleString()}
+        ₦${totalStockValue.toLocaleString()}<br><br>
+
+        <strong>Units Sold</strong><br>
+        ${totalSold.toLocaleString()}<br><br>
+
+        <strong>Cash Sales</strong><br>
+        ₦${cashSales.toLocaleString()}<br><br>
+
+        <strong>Credit Sales</strong><br>
+        ₦${creditSales.toLocaleString()}<br><br>
+
+        <strong>Cash at Hand</strong><br>
+        ₦${cashSales.toLocaleString()}<br><br>
+
+        <strong>Credit Outstanding</strong><br>
+        ₦${creditSales.toLocaleString()}
+
     </div>
 `;
- 
   let list = document.getElementById('inventory-list');
 
   if (!list) {
