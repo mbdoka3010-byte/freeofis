@@ -407,7 +407,10 @@ list.querySelectorAll('.delete-inventory-btn').forEach(function(button) {
     });
 });
 }
-inventorySection.addEventListener('click', function (event) {
+const inventorySection = document.getElementById('inventory');
+const inventory = JSON.parse(localStorage.getItem('freeofis_inventory') || '[]');
+  
+  inventorySection.addEventListener('click', function (event) {
     const button = event.target.closest('.sell-inventory-btn');
 
     if (!button) {
