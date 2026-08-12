@@ -322,7 +322,8 @@ summary.innerHTML = `
             <strong>${item.name || ''}</strong><br>
             Quantity: ${item.quantity || 0}<br>
             Price: ₦${item.price || 0}<br>
-            <small>Item #${index + 1}</small><br><br>
+          Subtotal: ₦${((Number(item.quantity) || 0) * (Number(item.price) || 0)).toLocaleString()}<br>
+           <small>Item #${index + 1}</small><br><br>
 
             <button type="button"
                 class="edit-inventory-btn"
