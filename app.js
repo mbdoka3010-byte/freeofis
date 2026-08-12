@@ -275,8 +275,16 @@ if (!addButton) {
         localStorage.getItem('freeofis_inventory') || '[]'
       );
 
-      inventory.push(item);
+     const existingItem = inventory.find(function(existing) {
+    return existing.name.toLowerCase() === item.name.toLowerCase();
+});
 
+if (existingItem) {
+    existingItem.quantity = Number(existingItem.quantity || 0) + Number(item.quantity || 0);
+    existingItem.price = Number(item.price || 0);
+} else {
+    inventory.push(item);
+}
       localStorage.setItem(
         'freeofis_inventory',
         JSON.stringify(inventory)
