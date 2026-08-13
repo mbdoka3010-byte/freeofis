@@ -20,13 +20,12 @@ customerId:s.customerId||null,method:s.method||s.payment||'cash',status:s.status
 return s});
 save(K.sales,sales);
 
-if(!pay.length){
-pay=sales.filter(s=>s.customerId&&Number(s.paid||0)>0).map(s=>({
-id:uid('PAY'),customerId:s.customerId,saleId:s.id,amount:Number(s.paid),date:s.date||today(),
-method:s.method||'cash',reference:s.reference||'',status:'completed'
-}));
-save(K.pay,pay)
-}
+sales.forEach(s=>{
+if(s.status==='cancelled'||Number(s.paid||0)<=0)return;
+let linked=pay.filter(p=>p.saleId===s.id&&p.status!=='cancelled').reduce((n,p)=>n+Number(p.amount||0),0);
+if(Number(s.paid)>linked)pay.push({id:uid('PAY'),customerId:s.customerId||null,saleId:s.id,amount:Number(s.paid)-linked,date:s.date||today(),method:s.method||'cash',reference:s.reference||'',status:'completed'});
+});
+save(K.pay,pay);
 
 const title=$('#title');
 const titles={
@@ -53,7 +52,7 @@ section('expenses','Expenses','Record business expenses.');
 function show(n){
 $$('.section').forEach(s=>s.classList.toggle('show',s.id===n));
 $$('[data-section]').forEach(x=>x.classList.toggle('active',x.dataset.section===n));
-if(title)title.textContent=titles[n]||'Freeofis';
+if(title)title.textContent=titles[n]||'Free Ofis';
 ({business:renderBusiness,records:renderSales,inventory:renderInv,customers:renderCus,credit:renderCredit,receipts:renderReceipts,reports:renderReports,expenses:renderExpenses,settings:renderSettings}[n]||(()=>{}))()
 }
 
@@ -85,13 +84,19 @@ let b=pay.reduce((n,p)=>n+(p.customerId===cid&&p.status!=='cancelled'?Number(p.a
 return Math.max(0,a-b)
 }
 
+function saleBalance(s){
+let p=pay.filter(x=>x.saleId===s.id&&x.status!=='cancelled').reduce((n,x)=>n+Number(x.amount||0),0);
+return Math.max(0,Number(s.total||0)-Math.max(Number(s.paid||0),p))
+}
+
 function addPay(cid,amt,date=today(),method='cash',ref='',saleId=null){
 amt=Number(amt);
-if(!cid||amt<=0||amt>balance(cid))return false;
-pay.push({
-id:uid('PAY'),customerId:cid,saleId,amount:amt,date,method,reference:ref,
-status:'completed'
-});
+if(!cid||amt<=0)return false;
+if(saleId){
+let s=sales.find(x=>x.id===saleId);
+if(!s||s.status==='cancelled'||s.customerId!==cid||amt>saleBalance(s))return false;
+}else if(amt>balance(cid))return false;
+pay.push({id:uid('PAY'),customerId:cid,saleId,amount:amt,date,method,reference:ref,status:'completed'});
 save(K.pay,pay);
 return true
 }
@@ -143,6 +148,8 @@ ${x.sku?`<br>SKU/Barcode: ${esc(x.sku)}`:''}<br>
 $('#addstock').onclick=()=>invForm();
 $$('[data-ie]',r).forEach(b=>b.onclick=()=>invForm(item(b.dataset.ie)));
 $$('[data-id]',r).forEach(b=>b.onclick=()=>{
+let used=sales.some(s=>s.status!=='cancelled'&&s.items.some(i=>i.productId===b.dataset.id));
+if(used)return alert('This item is already used in a sale. Edit it or set its quantity to 0 instead.');
 if(confirm('Delete this inventory item?')){
 inv=inv.filter(x=>x.id!==b.dataset.id);
 save(K.inv,inv);
@@ -260,16 +267,19 @@ updateTotal()
 }
 
 function lines(){
-let out=[],err='';
+let out=[],err='',need={};
 $$('.line').forEach(d=>{
 let p=item($('.prod',d).value),q=Number($('.qty',d).value);
 if(!p||q<1||!Number.isInteger(q))err='Select a valid item and quantity.';
-else if(q>p.quantity)err=`${p.name}: only ${p.quantity} available.`;
-else out.push({
-productId:p.id,name:p.name,quantity:q,
-unitPrice:p.price,subtotal:q*p.price
-})
+else{
+need[p.id]=(need[p.id]||0)+q;
+out.push({productId:p.id,name:p.name,quantity:q,unitPrice:p.price,subtotal:q*p.price})
+}
 });
+if(!err)for(let id in need){
+let p=item(id);
+if(p&&need[id]>p.quantity){err=`${p.name}: only ${p.quantity} available.`;break}
+}
 return{out,err}
 }
 
@@ -307,15 +317,16 @@ status:'completed'
 
 z.out.forEach(x=>item(x.productId).quantity-=x.quantity);
 sales.push(s);
-
-
-
+if(paid>0)pay.push({id:uid('PAY'),customerId:cid,saleId:s.id,amount:paid,date:s.date,method:s.method,reference:s.reference,status:'completed'});
 save(K.sales,sales);
 save(K.inv,inv);
 save(K.pay,pay);
 
 renderSales();
 renderInv();
+renderCus();
+renderCredit();
+renderReports();
 
 alert(`Sale recorded.
 Order: ${s.id}
@@ -355,20 +366,23 @@ $$('[data-c]',r).forEach(b=>b.onclick=()=>cancelSale(b.dataset.c))
 function salePay(id){
 let s=sales.find(x=>x.id===id);
 if(!s)return;
+let bal=saleBalance(s);
 let a=Number(prompt(`Order ${s.id}
-Current balance: ${money(s.balance)}
+Current balance: ${money(bal)}
 Payment amount:`));
 
-if(!a||a>s.balance)return alert('Invalid payment.');
+if(!a||a>bal)return alert('Invalid payment.');
 
-if(!addPay(s.customerId,a))return alert('Payment could not be recorded.');
+if(!addPay(s.customerId,a,today(),s.method||'cash',s.reference||'',s.id))return alert('Payment could not be recorded.');
 
-s.paid+=a;
+s.paid=Number(s.paid||0)+a;
 s.balance=Math.max(0,s.total-s.paid);
 
 save(K.sales,sales);
 renderSales();
 renderCredit();
+renderCus();
+renderReports();
 
 alert(`Payment recorded. Remaining: ${money(s.balance)}`)
 }
@@ -380,6 +394,7 @@ if(!s||s.status==='cancelled')return;
 if(!confirm('Cancel this order and restore its stock?'))return;
 
 s.status='cancelled';
+pay.filter(p=>p.saleId===s.id&&p.status!=='cancelled').forEach(p=>p.status='cancelled');
 
 s.items.forEach(i=>{
 let p=item(i.productId);
@@ -388,8 +403,12 @@ if(p)p.quantity+=i.quantity
 
 save(K.sales,sales);
 save(K.inv,inv);
+save(K.pay,pay);
 renderSales();
-renderInv()
+renderInv();
+renderCus();
+renderCredit();
+renderReports()
 }
 
 function renderCus(){
@@ -465,10 +484,27 @@ let a=Number(prompt(`${c.name}
 Outstanding: ${money(balance(cid))}
 Payment amount:`));
 
-if(!a||!addPay(cid,a))return alert('Invalid payment.');
+if(!a||a>balance(cid))return alert('Invalid payment.');
 
+let remaining=a;
+sales.filter(s=>s.customerId===cid&&s.status!=='cancelled'&&saleBalance(s)>0)
+.sort((a,b)=>a.date.localeCompare(b.date))
+.forEach(s=>{
+if(remaining<=0)return;
+let x=Math.min(remaining,saleBalance(s));
+if(addPay(cid,x,today(),s.method||'cash',s.reference||'',s.id)){
+s.paid=Number(s.paid||0)+x;
+s.balance=Math.max(0,s.total-s.paid);
+remaining-=x;
+}
+});
+if(remaining>0)return alert('Payment could not be fully recorded.');
+
+save(K.sales,sales);
 renderCus();
 renderCredit();
+renderSales();
+renderReports();
 
 alert('Payment recorded.')
 }
@@ -535,7 +571,7 @@ w.document.write(`
 <html>
 <head><title>${s.id}</title></head>
 <body style="font-family:Arial;max-width:700px;margin:30px auto">
-<h2>${esc(biz.name||'FREEOFIS')}</h2>
+<h2>${esc(biz.name||'Free Ofis')}</h2>
 <p>
 ${esc(biz.address||'')}<br>
 ${esc(biz.phone||'')}<br>
@@ -598,7 +634,7 @@ $$('[data-r]',r).forEach(b=>b.onclick=()=>receipt(b.dataset.r))
 function renderReports(){
 let valid=sales.filter(s=>s.status!=='cancelled'),
 st=valid.reduce((n,s)=>n+s.total,0),
-received=pay.reduce((n,p)=>n+p.amount,0),
+received=pay.reduce((n,p)=>n+(p.status!=='cancelled'?Number(p.amount||0):0),0),
 deb=cus.reduce((n,c)=>n+balance(c.id),0),
 ex=exp.reduce((n,e)=>n+e.amount,0);
 
