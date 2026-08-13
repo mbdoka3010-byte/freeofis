@@ -1,1726 +1,383 @@
-document.addEventListener('DOMContentLoaded',()=>{
-'use strict';
-const K={inv:'freeofis_inventory',cus:'freeofis_customers',sales:'freeofis_sales',pay:'freeofis_payments',biz:'freeofis_business',exp:'freeofis_expenses'};
-const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
-const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(d))}catch(e){return d}}, save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
-const uid=p=>p+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,7), today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
-const money=n=>'₦'+Number(n||0).toLocaleString('en-NG'), esc=v=>String(v??'').replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[m]));
-let inv=load(K.inv,[]), cus=load(K.cus,[]), sales=load(K.sales,[]), pay=load(K.pay,[]), exp=load(K.exp,[]), biz=load(K.biz,{name:'',address:'',phone:'',email:''});
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Free Ofis - Workspace</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
 
-inv=inv.map(x=>({...x,id:x.id||uid('ITEM'),quantity:Number(x.quantity||0),price:Number(x.price||0)}));
+<body>
 
-// Consolidate genuinely identical inventory items.
-// Identity is based on name + selling price + SKU/barcode.
-// The first record becomes the canonical record.
-// Quantities are combined and old sales are remapped to the canonical ID.
-const productIdMap={};
-const merged=[];
-const productKey=x=>[
-  String(x.name||'').trim().toLowerCase(),
-  Number(x.price||0),
-  String(x.sku||'').trim().toLowerCase()
-].join('||');
+<aside class="sidebar">
 
-inv.forEach(x=>{
-  const key=productKey(x);
-  const existing=merged.find(y=>productKey(y)===key);
+  <div class="brand">Free Ofis</div>
 
-  if(existing){
-    productIdMap[x.id]=existing.id;
-    existing.quantity+=Number(x.quantity||0);
-  }else{
-    merged.push({...x});
-  }
-});
-
-if(Object.keys(productIdMap).length){
-  sales=sales.map(s=>{
-    const mappedItemId=productIdMap[s.itemId]||s.itemId;
-
-    return {
-      ...s,
-      itemId:mappedItemId,
-      items:Array.isArray(s.items)
-        ? s.items.map(i=>{
-            const mapped=productIdMap[i.productId]||i.productId;
-            return {...i,productId:mapped};
-          })
-        : s.items
-    };
-  });
-
-  inv=merged;
-}
-
-save(K.inv,inv);
-
-sales=sales.map(s=>{
-  if(!Array.isArray(s.items)){
-    let total=Number(s.total??s.amount??0),q=Number(s.quantity||0);
-
-    s={
-      ...s,
-      total,
-      paid:s.payment==='credit'?0:total,
-      balance:s.payment==='credit'?total:0,
-      items:q?[{
-        productId:s.itemId||'',
-        name:s.itemName||s.description||'Previous item',
-        quantity:q,
-        unitPrice:q?total/q:total,
-        subtotal:total
-      }]:[],
-      customerId:s.customerId||null,
-      method:s.method||s.payment||'cash',
-      status:s.status||'completed',
-      date:s.date||today()
-    };
-  }
-
-  return s;
-});
-
-save(K.sales,sales);
-
-// Normalize payment records and repair legacy sales that were recorded
-// with a paid amount but without a corresponding payment transaction.
-pay=Array.isArray(pay)?pay.map(p=>({
-  id:p.id||uid('PAY'),
-  customerId:p.customerId||null,
-  saleId:p.saleId||null,
-  amount:Number(p.amount||0),
-  date:p.date||today(),
-  method:p.method||'cash',
-  reference:p.reference||'',
-  status:p.status||'completed'
-})).filter(p=>p.amount>0):[];
-
-sales.forEach(s=>{
-  const linked=pay
-    .filter(p=>p.saleId===s.id&&p.status!=='cancelled')
-    .reduce((n,p)=>n+Number(p.amount||0),0);
-
-  const legacyUnlinked=pay.some(p=>
-    !p.saleId&&
-    p.customerId===s.customerId&&
-    Number(p.amount||0)===Number(s.paid||0)&&
-    (p.date||'')===(s.date||'')&&
-    p.status!=='cancelled'
-  );
-
-  if(Number(s.paid||0)>0&&linked===0&&!legacyUnlinked){
-    pay.push({
-      id:uid('PAY'),
-      customerId:s.customerId||null,
-      saleId:s.id,
-      amount:Number(s.paid),
-      date:s.date||today(),
-      method:s.method||'cash',
-      reference:s.reference||'',
-      status:'completed'
-    });
-  }
-});
-
-sales.forEach(s=>{
-  if(s.status!=='cancelled')syncSalePaymentFields(s);
-});
-
-save(K.sales,sales);
-save(K.pay,pay);
-
-const title=$('#title');
-
-const titles={
-  home:'Your workspace',
-  business:'Business',
-  student:'Student',
-  media:'Media',
-  office:'Office',
-  personal:'Personal',
-  records:'Sales & Orders',
-  inventory:'Inventory',
-  customers:'Customers',
-  credit:'Credit & Debtors',
-  receipts:'Receipts',
-  reports:'Reports',
-  expenses:'Expenses',
-  settings:'Settings',
-  documents:'Documents',
-  tools:'AI Tools',
-  help:'Help'
-};
-
-function section(id,h,d){
-  if($('#'+id))return;
-
-  let m=$('main'),s=document.createElement('section');
-
-  s.id=id;
-  s.className='section';
-
-  s.innerHTML=`
-    <div class="heading">
-      <h2>${h}</h2>
-      <p>${d}</p>
+  <div class="profile">
+    <div class="avatar">F</div>
+    <div>
+      <b>My Workspace</b>
+      <small>Personal account</small>
     </div>
-    <div id="${id}-content"></div>
-  `;
+  </div>
 
-  m.appendChild(s);
-}
+  <nav>
 
-section('customers','Customers','Customer profiles, purchase history and account balances.');
-section('credit','Credit & Debtors','Credit purchases and part payments.');
-section('receipts','Receipts','Professional receipts with seller information.');
-section('reports','Reports','Sales, payments, expenses and stock performance.');
-section('expenses','Expenses','Record business expenses.');
-
-// Back navigation for secondary sections.
-const parentSection={
-  business:'home',
-  records:'business',
-  inventory:'business',
-  customers:'business',
-  credit:'business',
-  receipts:'business',
-  reports:'business',
-  expenses:'business',
-  settings:'home',
-  documents:'home',
-  tools:'home',
-  help:'home',
-  student:'home',
-  media:'home',
-  office:'home',
-  personal:'home'
-};
-
-function addBackKey(n){
-  const sectionEl=$('#'+n);
-
-  if(!sectionEl||n==='home'||sectionEl.querySelector('[data-back-key]'))return;
-
-  const heading=$('.heading',sectionEl);
-
-  if(!heading)return;
-
-  const back=document.createElement('button');
-
-  back.type='button';
-  back.textContent='← Back';
-  back.setAttribute('data-back-key','1');
-
-  back.style.cssText=
-    'border:0;background:none;color:inherit;font:inherit;font-weight:600;cursor:pointer;padding:0;margin-bottom:14px;';
-
-  back.onclick=()=>show(parentSection[n]||'home');
-
-  heading.prepend(back);
-}
-
-function show(n){
-  $$('.section').forEach(s=>
-    s.classList.toggle('show',s.id===n)
-  );
-
-  $$('[data-section]').forEach(x=>
-    x.classList.toggle('active',x.dataset.section===n)
-  );
-
-  if(title)title.textContent=titles[n]||'Free Ofis';
-
-  addBackKey(n);
-
-  ({
-    business:renderBusiness,
-    records:renderSales,
-    inventory:renderInv,
-    customers:renderCus,
-    credit:renderCredit,
-    receipts:renderReceipts,
-    reports:renderReports,
-    expenses:renderExpenses,
-    settings:renderSettings
-  }[n]||(()=>{}))();
-}
-
-function wire(){
-  $$('[data-section]').forEach(x=>{
-    if(x.dataset.wired)return;
-
-    x.dataset.wired=1;
-    x.onclick=()=>show(x.dataset.section);
-  });
-
-  $$('.card').forEach(c=>{
-    if(c.dataset.section||c.dataset.wired)return;
-
-    let t=c.textContent.toLowerCase();
-
-    let m={
-      'customers':'customers',
-      'credit & debtors':'credit',
-      'receipts':'receipts',
-      'reports':'reports',
-      'sales & orders':'records',
-      'sales & records':'records',
-      'inventory':'inventory'
-    };
-
-    for(let k in m){
-      if(t.includes(k)){
-        c.dataset.wired=1;
-        c.dataset.section=m[k];
-        c.onclick=()=>show(m[k]);
-        break;
-      }
-    }
-  });
-}
-
-wire();
-
-const item=id=>inv.find(x=>x.id===id);
-const customer=id=>cus.find(x=>x.id===id);
-
-function customerTotal(cid){
-  return sales.reduce(
-    (n,s)=>
-      n+(s.customerId===cid&&s.status!=='cancelled'
-        ?Number(s.total||0)
-        :0),
-    0
-  );
-}
-
-function customerPaid(cid){
-  return pay.reduce(
-    (n,p)=>
-      n+(p.customerId===cid&&p.status!=='cancelled'
-        ?Number(p.amount||0)
-        :0),
-    0
-  );
-}
-
-function balance(cid){
-  return Math.max(0,customerTotal(cid)-customerPaid(cid));
-}
-
-function salePaid(s){
-  const linked=pay
-    .filter(p=>p.saleId===s.id&&p.status!=='cancelled')
-    .reduce((n,p)=>n+Number(p.amount||0),0);
-
-  return linked>0
-    ?Math.min(Number(s.total||0),linked)
-    :Number(s.paid||0);
-}
-
-function saleBalance(s){
-  return Math.max(0,Number(s.total||0)-salePaid(s));
-}
-
-function syncSalePaymentFields(s){
-  s.paid=salePaid(s);
-  s.balance=saleBalance(s);
-  return s;
-}
-
-function addPay(cid,amt,date=today(),method='cash',ref='',saleId=null){
-  amt=Number(amt);
-
-  if(!cid||amt<=0||amt>balance(cid))return false;
-
-  if(saleId){
-    const s=sales.find(x=>x.id===saleId);
-
-    if(!s||s.status==='cancelled'||amt>saleBalance(s))
-      return false;
-  }
-
-  pay.push({
-    id:uid('PAY'),
-    customerId:cid,
-    saleId,
-    amount:amt,
-    date,
-    method,
-    reference:ref,
-    status:'completed'
-  });
-
-  save(K.pay,pay);
-
-  return true;
-}
-
-function renderBusiness(){
-  let s=$('#business'),r=$('.freeofis-biz',s);
-
-  if(!r){
-    r=document.createElement('div');
-    r.className='freeofis-biz';
-    s.appendChild(r);
-  }
-
-  r.innerHTML=`
-    <div class="quick">
-      <button class="card" id="bs">
-        🧾
-        <b>Sales & Orders</b>
-        <small>Sell multiple products and record payments.</small>
-      </button>
-
-      <button class="card" id="bi">
-        📦
-        <b>Inventory</b>
-        <small>Products, quantities, prices and barcodes.</small>
-      </button>
-
-      <button class="card" id="bc">
-        👥
-        <b>Customers</b>
-        <small>Profiles and account balances.</small>
-      </button>
-
-      <button class="card" id="bd">
-        💳
-        <b>Credit & Debtors</b>
-        <small>Credit purchases and part payments.</small>
-      </button>
-
-      <button class="card" id="br">
-        🧾
-        <b>Receipts</b>
-        <small>Seller and customer receipts.</small>
-      </button>
-
-      <button class="card" id="brep">
-        📊
-        <b>Reports</b>
-        <small>Business performance.</small>
-      </button>
-    </div>
-  `;
-
-  [
-    ['bs','records'],
-    ['bi','inventory'],
-    ['bc','customers'],
-    ['bd','credit'],
-    ['br','receipts'],
-    ['brep','reports']
-  ].forEach(([a,b])=>
-    $('#'+a).onclick=()=>show(b)
-  );
-}
-
-function renderInv(){
-  let s=$('#inventory'),r=$('.freeofis-inv',s);
-
-  if(!r){
-    r=document.createElement('div');
-    r.className='freeofis-inv';
-    s.appendChild(r);
-  }
-
-  let units=inv.reduce((n,x)=>n+x.quantity,0);
-  let val=inv.reduce((n,x)=>n+x.quantity*x.price,0);
-
-  r.innerHTML=`
-    <div class="panel">
-      <h3>Items Remaining</h3>
-      <strong>${units.toLocaleString()}</strong>
-
-      <h3>Stock Value</h3>
-      <strong>${money(val)}</strong>
-
-      <br><br>
-
-      <button class="primary" id="addstock">
-        + Add Inventory Item
-      </button>
-
-      <div id="if"></div>
-    </div>
-
-    <div class="panel">
-      <h3>Inventory</h3>
-
-      <div id="il">
-        ${
-          inv.length
-          ?inv.map(x=>`
-            <div class="panel">
-              <b>${esc(x.name)}</b><br>
-              Quantity: ${x.quantity}<br>
-              Price: ${money(x.price)}<br>
-              Stock value: ${money(x.quantity*x.price)}
-              ${x.sku?`<br>SKU/Barcode: ${esc(x.sku)}`:''}
-              <br>
-
-              <button data-ie="${x.id}">
-                Edit
-              </button>
-
-              <button data-id="${x.id}">
-                Delete
-              </button>
-            </div>
-          `).join('')
-          :'<p>No inventory items yet.</p>'
-        }
-      </div>
-    </div>
-  `;
-
-  $('#addstock').onclick=()=>invForm();
-
-  $$('[data-ie]',r).forEach(b=>
-    b.onclick=()=>invForm(item(b.dataset.ie))
-  );
-
-  $$('[data-id]',r).forEach(b=>
-    b.onclick=()=>{
-      if(confirm('Delete this inventory item?')){
-        inv=inv.filter(x=>x.id!==b.dataset.id);
-        save(K.inv,inv);
-        renderInv();
-      }
-    }
-  );
-}
-
-function invForm(old=null){
-  let a=$('#if');
-
-  a.innerHTML=`
-    <form id="invf">
-      <h3>${old?'Edit':'Add'} Item</h3>
-
-      <input
-        id="in"
-        placeholder="Item name"
-        required
-        value="${esc(old?.name||'')}"
-      ><br><br>
-
-      <input
-        id="iq"
-        type="number"
-        min="0"
-        required
-        value="${old?.quantity??0}"
-      ><br><br>
-
-      <input
-        id="ip"
-        type="number"
-        min="0"
-        required
-        placeholder="Selling price"
-        value="${old?.price??0}"
-      ><br><br>
-
-      <input
-        id="is"
-        placeholder="SKU / Barcode"
-        value="${esc(old?.sku||'')}"
-      ><br><br>
-
-      <button class="primary">
-        Save Item
-      </button>
-    </form>
-  `;
-
-  $('#invf').onsubmit=e=>{
-    e.preventDefault();
-
-    let x={
-      id:old?.id||uid('ITEM'),
-      name:$('#in').value.trim(),
-      quantity:Number($('#iq').value),
-      price:Number($('#ip').value),
-      sku:$('#is').value.trim()
-    };
-
-    let i=inv.findIndex(z=>z.id===x.id);
-
-    i<0?inv.push(x):inv[i]=x;
-
-    save(K.inv,inv);
-
-    renderInv();
-  };
-}
-
-function renderSales(){
-  let s=$('#records'),r=$('.freeofis-sales',s);
-
-  if(!r){
-    r=document.createElement('div');
-    r.className='freeofis-sales';
-    s.appendChild(r);
-  }
-
-  r.innerHTML=`
-    <div class="panel">
-      <button class="primary" id="neworder">
-        + New Sale / Order
-      </button>
-
-      <div id="of"></div>
-    </div>
-
-    <div class="panel">
-      <h3>Sales & Orders</h3>
-
-      <input
-        id="sq"
-        placeholder="Search order, customer or item"
-      >
-
-      <div id="sl"></div>
-    </div>
-  `;
-
-  $('#neworder').onclick=orderForm;
-  $('#sq').oninput=renderSaleList;
-
-  renderSaleList();
-}
-
-function orderForm(){
-  let a=$('#of');
-
-  a.innerHTML=`
-    <form id="order">
-      <h3>New Sale / Order</h3>
-
-      <label>Date</label><br>
-
-      <input
-        id="od"
-        type="date"
-        value="${today()}"
-        required
-      ><br><br>
-
-      <label>Customer</label><br>
-
-      <select id="oc">
-        <option value="">Walk-in Customer</option>
-
-        ${
-          cus.map(c=>`
-            <option value="${c.id}">
-              ${esc(c.name)}
-              ${balance(c.id)?' — owes '+money(balance(c.id)):''}
-            </option>
-          `).join('')
-        }
-      </select>
-
-      <div id="lines"></div>
-
-      <button type="button" id="aline">
-        + Add Item
-      </button>
-
-      <p>
-        Total:
-        <b id="tot">₦0</b>
-      </p>
-
-      <label>Amount paid now</label><br>
-
-      <input
-        id="op"
-        type="number"
-        min="0"
-        value="0"
-        required
-      ><br><br>
-
-      <select id="om">
-        <option>cash</option>
-        <option>transfer</option>
-        <option>pos</option>
-        <option>other</option>
-      </select>
-
-      <br><br>
-
-      <input
-        id="oref"
-        placeholder="Payment reference"
-      ><br><br>
-
-      <textarea
-        id="on"
-        placeholder="Notes"
-      ></textarea>
-
-      <br><br>
-
-      <button class="primary">
-        Complete Sale
-      </button>
-    </form>
-  `;
-
-  addLine();
-
-  $('#aline').onclick=addLine;
-
-  $('#order').onsubmit=completeSale;
-}
-
-function addLine(){
-  let b=$('#lines');
-  let d=document.createElement('div');
-
-  d.className='line';
-
-  d.innerHTML=`
-    <select class="prod" required>
-      <option value="">
-        Select product
-      </option>
-
-      ${
-        inv.map(x=>`
-          <option value="${x.id}">
-            ${esc(x.name)} — ${money(x.price)} — Stock ${x.quantity}
-          </option>
-        `).join('')
-      }
-    </select>
-
-    <input
-      class="qty"
-      type="number"
-      min="1"
-      value="1"
-      style="width:70px"
-    >
-
-    <button type="button" class="rm">
-      Remove
+    <button class="nav active" data-section="home">
+      🏠 <span>Home</span>
     </button>
 
-    <br><br>
-  `;
+    <button class="nav" data-section="business">
+      💼 <span>Business</span>
+    </button>
 
-  b.appendChild(d);
+    <button class="nav" data-section="student">
+      🎓 <span>Student</span>
+    </button>
 
-  $('.prod',d).onchange=updateTotal;
-  $('.qty',d).oninput=updateTotal;
+    <button class="nav" data-section="media">
+      🎥 <span>Media</span>
+    </button>
 
-  $('.rm',d).onclick=()=>{
-    d.remove();
-    updateTotal();
-  };
+    <button class="nav" data-section="office">
+      🗂️ <span>Office</span>
+    </button>
 
-  updateTotal();
-}
+    <button class="nav" data-section="personal">
+      👤 <span>Personal</span>
+    </button>
 
-function lines(){
-  let out=[],err='',requested={};
+  </nav>
 
-  $$('.line').forEach(d=>{
-    let p=item($('.prod',d).value);
-    let q=Number($('.qty',d).value);
+  <div class="bottom">
 
-    if(!p||q<1||!Number.isInteger(q)){
-      err='Select a valid item and quantity.';
-      return;
-    }
+    <button class="nav" data-section="documents">
+      📄 <span>Documents</span>
+    </button>
 
-    requested[p.id]=(requested[p.id]||0)+q;
+    <button class="nav" data-section="tools">
+      ✦ <span>AI Tools</span>
+    </button>
 
-    out.push({
-      productId:p.id,
-      name:p.name,
-      quantity:q,
-      unitPrice:p.price,
-      subtotal:q*p.price
-    });
-  });
+    <button class="nav" data-section="settings">
+      ⚙ <span>Settings</span>
+    </button>
 
-  if(!err){
-    for(const id in requested){
-      const p=item(id);
+    <button class="nav" data-section="help">
+      ? <span>Help</span>
+    </button>
 
-      if(p&&requested[id]>p.quantity){
-        err=`${p.name}: only ${p.quantity} available.`;
-        break;
-      }
-    }
-  }
+  </div>
 
-  return{out,err};
-}
+</aside>
 
-function updateTotal(){
-  let z=lines();
-  let t=z.out.reduce((n,x)=>n+x.subtotal,0);
 
-  if($('#tot'))$('#tot').textContent=money(t);
-  if($('#op'))$('#op').max=t;
-}
+<main>
 
-function completeSale(e){
-  e.preventDefault();
+  <header class="topbar">
+    <div>
+      <div>WELCOME TO FREE OFIS</div>
+      <h1 id="title">Your workspace</h1>
+    </div>
 
-  let z=lines();
+    <div class="user">F</div>
+  </header>
 
-  if(z.err||!z.out.length)
-    return alert(z.err||'Add at least one item.');
 
-  let total=z.out.reduce((n,x)=>n+x.subtotal,0);
-  let paid=Number($('#op').value||0);
-  let cid=$('#oc').value||null;
-  let method=paid?$('#om').value:'credit';
-  let reference=$('#oref').value.trim();
+  <section id="home" class="section show">
 
-  if(!Number.isFinite(paid)||paid<0)
-    return alert('Enter a valid payment amount.');
+    <div class="hero">
 
-  if(paid>total)
-    return alert('Amount paid cannot exceed the order total.');
+      <div>
+        <h2>Everything you need, in one place.</h2>
 
-  if(total-paid>0&&!cid)
-    return alert('Select a customer for a credit balance.');
-
-  let s={
-    id:uid('SALE'),
-    date:$('#od').value,
-    customerId:cid,
-    items:z.out,
-    total,
-    paid:0,
-    balance:total,
-    method,
-    reference,
-    notes:$('#on').value.trim(),
-    status:'completed'
-  };
-
-  z.out.forEach(x=>{
-    const p=item(x.productId);
-
-    if(p)p.quantity-=x.quantity;
-  });
-
-  sales.push(s);
-
-  if(paid>0){
-    pay.push({
-      id:uid('PAY'),
-      customerId:cid,
-      saleId:s.id,
-      amount:paid,
-      date:s.date,
-      method,
-      reference,
-      status:'completed'
-    });
-  }
-
-  syncSalePaymentFields(s);
-
-  save(K.sales,sales);
-  save(K.inv,inv);
-  save(K.pay,pay);
-
-  renderSales();
-  renderInv();
-  renderCredit();
-
-  alert(`Sale recorded.
-Order: ${s.id}
-Total: ${money(total)}
-Paid: ${money(s.paid)}
-Balance: ${money(s.balance)}`);
-}
-
-function renderSaleList(){
-  let q=($('#sq')?.value||'').toLowerCase();
-  let r=$('#sl');
-
-  if(!r)return;
-
-  let a=sales
-    .slice()
-    .reverse()
-    .filter(s=>{
-      let c=customer(s.customerId)?.name||'walk-in';
-
-      return !q||
-        s.id.toLowerCase().includes(q)||
-        c.toLowerCase().includes(q)||
-        s.items.some(i=>i.name.toLowerCase().includes(q));
-    });
-
-  r.innerHTML=a.length
-    ?a.map(s=>`
-      <div class="panel">
-        <b>${esc(s.id)}</b><br>
-
-        ${s.date} —
-        ${esc(customer(s.customerId)?.name||'Walk-in Customer')}
-        ${s.status==='cancelled'?'— CANCELLED':''}
-
-        <br>
-
-        ${s.items.map(i=>
-          `${esc(i.name)} × ${i.quantity}`
-        ).join(', ')}
-
-        <br>
-
-        Total ${money(s.total)}
-        |
-        Paid ${money(salePaid(s))}
-        |
-        Balance <b>${money(saleBalance(s))}</b>
-
-        <br>
-
-        <button data-r="${s.id}">
-          Receipt
-        </button>
-
-        ${
-          saleBalance(s)
-          ?`<button data-p="${s.id}">Payment</button>`
-          :''
-        }
-
-        <button data-c="${s.id}">
-          Cancel
-        </button>
+        <p>
+          Choose a workspace designed for the way you work.
+        </p>
       </div>
-    `).join('')
-    :'<p>No sales/orders found.</p>';
 
-  $$('[data-r]',r).forEach(b=>
-    b.onclick=()=>receipt(b.dataset.r)
-  );
+    </div>
 
-  $$('[data-p]',r).forEach(b=>
-    b.onclick=()=>salePay(b.dataset.p)
-  );
 
-  $$('[data-c]',r).forEach(b=>
-    b.onclick=()=>cancelSale(b.dataset.c)
-  );
-}
+    <div class="quick">
 
-function salePay(id){
-  let s=sales.find(x=>x.id===id);
-
-  if(!s||s.status==='cancelled')return;
-
-  const current=saleBalance(s);
-
-  if(current<=0)
-    return alert('This order is already fully paid.');
-
-  let a=Number(prompt(`Order ${s.id}
-Current balance: ${money(current)}
-Payment amount:`));
-
-  if(!Number.isFinite(a)||a<=0||a>current)
-    return alert('Invalid payment.');
-
-  let method=prompt(
-    'Payment method: cash, transfer, pos or other',
-    'cash'
-  );
-
-  if(method===null)return;
-
-  method=method.trim().toLowerCase()||'cash';
-
-  if(!['cash','transfer','pos','other'].includes(method))
-    return alert('Invalid payment method.');
-
-  let ref=prompt(
-    'Payment reference (optional):',
-    ''
-  );
-
-  if(ref===null)ref='';
-
-  if(!addPay(
-    s.customerId,
-    a,
-    today(),
-    method,
-    ref,
-    s.id
-  )){
-    return alert('Payment could not be recorded.');
-  }
-
-  syncSalePaymentFields(s);
-
-  save(K.sales,sales);
-
-  renderSales();
-  renderCredit();
-  renderCus();
-  renderReports();
-
-  alert(
-    `Payment recorded. Remaining: ${money(s.balance)}`
-  );
-}
-
-function cancelSale(id){
-  let s=sales.find(x=>x.id===id);
-
-  if(!s||s.status==='cancelled')return;
-
-  if(!confirm('Cancel this order and restore its stock?'))
-    return;
-
-  s.status='cancelled';
-
-  pay
-    .filter(p=>p.saleId===s.id&&p.status!=='cancelled')
-    .forEach(p=>p.status='cancelled');
-
-  s.items.forEach(i=>{
-    let p=item(i.productId);
-
-    if(p)p.quantity+=i.quantity;
-  });
-
-  save(K.sales,sales);
-  save(K.inv,inv);
-  save(K.pay,pay);
-
-  renderSales();
-  renderInv();
-  renderCredit();
-  renderCus();
-  renderReports();
-}
-
-function renderCus(){
-  let r=$('#customers-content');
-
-  r.innerHTML=`
-    <div class="panel">
-
-      <button class="primary" id="nc">
-        + Add Customer
+      <button class="card" data-section="business">
+        💼
+        <b>Business</b>
+        <small>
+          Sales, inventory, customers, credit and business records.
+        </small>
       </button>
 
-      <div id="cf"></div>
-
-      <input
-        id="cq"
-        placeholder="Search customer"
-      >
-
-      <div id="cl"></div>
-    </div>
-  `;
-
-  $('#nc').onclick=()=>cusForm();
-  $('#cq').oninput=renderCusList;
-
-  renderCusList();
-}
-
-function cusForm(old=null){
-  let a=$('#cf');
-
-  a.innerHTML=`
-    <form id="cusf">
-      <h3>${old?'Edit':'Add'} Customer</h3>
-
-      <input
-        id="cn"
-        placeholder="Customer name"
-        required
-        value="${esc(old?.name||'')}"
-      ><br><br>
-
-      <input
-        id="cp"
-        placeholder="Phone"
-        value="${esc(old?.phone||'')}"
-      ><br><br>
-
-      <input
-        id="ca"
-        placeholder="Address"
-        value="${esc(old?.address||'')}"
-      ><br><br>
-
-      <button class="primary">
-        Save Customer
-      </button>
-    </form>
-  `;
-
-  $('#cusf').onsubmit=e=>{
-    e.preventDefault();
-
-    let x={
-      id:old?.id||uid('CUS'),
-      name:$('#cn').value.trim(),
-      phone:$('#cp').value.trim(),
-      address:$('#ca').value.trim()
-    };
-
-    let i=cus.findIndex(z=>z.id===x.id);
-
-    i<0?cus.push(x):cus[i]=x;
-
-    save(K.cus,cus);
-
-    renderCus();
-  };
-}
-
-function renderCusList(){
-  let r=$('#cl');
-  let q=($('#cq')?.value||'').toLowerCase();
-
-  r.innerHTML=cus
-    .filter(c=>
-      c.name.toLowerCase().includes(q)||
-      (c.phone||'').includes(q)
-    )
-    .map(c=>`
-      <div class="panel">
-        <b>${esc(c.name)}</b><br>
-        ${esc(c.phone||'')}<br>
-
-        Outstanding:
-        <b>${money(balance(c.id))}</b><br>
-
-        <button data-st="${c.id}">
-          Statement
-        </button>
-
-        <button data-pp="${c.id}">
-          Record Payment
-        </button>
-      </div>
-    `).join('')
-    ||'<p>No customers found.</p>';
-
-  $$('[data-st]',r).forEach(b=>
-    b.onclick=()=>statement(b.dataset.st)
-  );
-
-  $$('[data-pp]',r).forEach(b=>
-    b.onclick=()=>customerPay(b.dataset.pp)
-  );
-}
-
-function customerPay(cid){
-  let c=customer(cid);
-
-  if(!c)return;
-
-  const outstanding=balance(cid);
-
-  if(outstanding<=0)
-    return alert('This customer has no outstanding balance.');
-
-  let a=Number(prompt(`${c.name}
-Outstanding: ${money(outstanding)}
-Payment amount:`));
-
-  if(!Number.isFinite(a)||a<=0||a>outstanding)
-    return alert('Invalid payment.');
-
-  let method=prompt(
-    'Payment method: cash, transfer, pos or other',
-    'cash'
-  );
-
-  if(method===null)return;
-
-  method=method.trim().toLowerCase()||'cash';
-
-  if(!['cash','transfer','pos','other'].includes(method))
-    return alert('Invalid payment method.');
-
-  let ref=prompt(
-    'Payment reference (optional):',
-    ''
-  );
-
-  if(ref===null)ref='';
-
-  // Allocate a customer-level payment against the oldest unpaid sales.
-  // This keeps individual order balances and the customer ledger consistent.
-  let remaining=a;
-
-  const openSales=sales
-    .filter(s=>
-      s.customerId===cid&&
-      s.status!=='cancelled'&&
-      saleBalance(s)>0
-    )
-    .sort((x,y)=>
-      String(x.date).localeCompare(String(y.date))
-    );
-
-  openSales.forEach(s=>{
-    if(remaining<=0)return;
-
-    const portion=Math.min(
-      remaining,
-      saleBalance(s)
-    );
-
-    pay.push({
-      id:uid('PAY'),
-      customerId:cid,
-      saleId:s.id,
-      amount:portion,
-      date:today(),
-      method,
-      reference:ref,
-      status:'completed'
-    });
-
-    remaining-=portion;
-
-    syncSalePaymentFields(s);
-  });
-
-  if(remaining>0)
-    return alert('Payment could not be fully allocated.');
-
-  save(K.pay,pay);
-  save(K.sales,sales);
-
-  renderCus();
-  renderCredit();
-  renderSales();
-  renderReports();
-
-  alert(
-    `Payment recorded. Remaining customer balance: ${money(balance(cid))}`
-  );
-}
-
-function statement(cid){
-  let c=customer(cid);
-  let rows=[];
-  let run=0;
-
-  sales
-    .filter(s=>
-      s.customerId===cid&&
-      s.status!=='cancelled'
-    )
-    .forEach(s=>
-      rows.push({
-        date:s.date,
-        type:'Purchase',
-        d:s.total,
-        c:0
-      })
-    );
-
-  pay
-    .filter(p=>
-      p.customerId===cid&&
-      p.status!=='cancelled'
-    )
-    .forEach(p=>
-      rows.push({
-        date:p.date,
-        type:'Payment',
-        d:0,
-        c:p.amount
-      })
-    );
-
-  rows.sort((a,b)=>
-    a.date.localeCompare(b.date)
-  );
-
-  modal(`
-    <h2>${esc(c.name)} — Statement</h2>
-
-    <p>
-      Outstanding:
-      <b>${money(balance(cid))}</b>
-    </p>
-
-    <table style="width:100%">
-      <tr>
-        <th>Date</th>
-        <th>Type</th>
-        <th>Debit</th>
-        <th>Credit</th>
-        <th>Balance</th>
-      </tr>
-
-      ${
-        rows.map(x=>{
-          run+=x.d-x.c;
-
-          return`
-            <tr>
-              <td>${x.date}</td>
-              <td>${x.type}</td>
-              <td>${money(x.d)}</td>
-              <td>${money(x.c)}</td>
-              <td>${money(run)}</td>
-            </tr>
-          `;
-        }).join('')
-      }
-    </table>
-  `);
-}
-
-function renderCredit(){
-  let r=$('#credit-content');
-
-  let d=cus.filter(c=>
-    balance(c.id)>0
-  );
-
-  r.innerHTML=`
-    <div class="panel">
-      <h3>Total Outstanding</h3>
-
-      <h2>
-        ${money(
-          d.reduce(
-            (n,c)=>n+balance(c.id),
-            0
-          )
-        )}
-      </h2>
-
-      <p>
-        Debtors: ${d.length}
-      </p>
-    </div>
-
-    ${
-      d.map(c=>`
-        <div class="panel">
-          <b>${esc(c.name)}</b><br>
-
-          Owing:
-          <b>${money(balance(c.id))}</b><br>
-
-          <button data-st="${c.id}">
-            Statement
-          </button>
-
-          <button data-pp="${c.id}">
-            Record Payment
-          </button>
-        </div>
-      `).join('')
-    }
-  `;
-
-  $$('[data-st]',r).forEach(b=>
-    b.onclick=()=>statement(b.dataset.st)
-  );
-
-  $$('[data-pp]',r).forEach(b=>
-    b.onclick=()=>customerPay(b.dataset.pp)
-  );
-}
-
-function receipt(id){
-  let s=sales.find(x=>x.id===id);
-
-  if(!s)return;
-
-  let c=customer(s.customerId);
-  let w=open('','_blank');
-
-  if(!w)
-    return alert('Allow pop-ups for receipts.');
-
-  w.document.write(`
-    <html>
-      <head>
-        <title>${s.id}</title>
-      </head>
-
-      <body
-        style="font-family:Arial;max-width:700px;margin:30px auto"
-      >
-
-        <h2>
-          ${esc(biz.name||'FREE OFIS')}
-        </h2>
-
-        <p>
-          ${esc(biz.address||'')}<br>
-          ${esc(biz.phone||'')}<br>
-          ${esc(biz.email||'')}
-        </p>
-
-        <hr>
-
-        <p>
-          Receipt:
-          <b>${s.id}</b><br>
-
-          Date:
-          ${s.date}<br>
-
-          Customer:
-          ${esc(c?.name||'Walk-in Customer')}
-        </p>
-
-        <table
-          border="1"
-          cellspacing="0"
-          cellpadding="8"
-          width="100%"
-        >
-          <tr>
-            <th>Item</th>
-            <th>Qty</th>
-            <th>Price</th>
-            <th>Total</th>
-          </tr>
-
-          ${
-            s.items.map(i=>`
-              <tr>
-                <td>${esc(i.name)}</td>
-                <td>${i.quantity}</td>
-                <td>${money(i.unitPrice)}</td>
-                <td>${money(i.subtotal)}</td>
-              </tr>
-            `).join('')
-          }
-        </table>
-
-        <h3>
-          Total: ${money(s.total)}
-        </h3>
-
-        <p>
-          Paid: ${money(salePaid(s))}<br>
-          Balance: ${money(saleBalance(s))}<br>
-          Payment: ${esc(s.method)}
-        </p>
-
-        <script>
-          onload=()=>print()
-        <\/script>
-
-      </body>
-    </html>
-  `);
-
-  w.document.close();
-}
-
-function renderReceipts(){
-  let r=$('#receipts-content');
-
-  r.innerHTML=`
-    <div class="panel">
-      <b>
-        ${esc(
-          biz.name||
-          'Seller information not set'
-        )}
-      </b><br>
-
-      ${esc(biz.address||'')}<br>
-      ${esc(biz.phone||'')}<br>
-
-      <button
-        class="primary"
-        onclick="document.querySelector('[data-section=settings]').click()"
-      >
-        Edit Seller Information
-      </button>
-    </div>
-
-    <div class="panel">
-      ${
-        sales
-          .slice()
-          .reverse()
-          .slice(0,50)
-          .map(s=>`
-            <p>
-              ${s.date} —
-              ${s.id} —
-              ${money(s.total)}
-
-              <button data-r="${s.id}">
-                Print
-              </button>
-            </p>
-          `).join('')
-          ||'<p>No receipts.</p>'
-      }
-    </div>
-  `;
-
-  $$('[data-r]',r).forEach(b=>
-    b.onclick=()=>receipt(b.dataset.r)
-  );
-}
-
-function renderReports(){
-  let valid=sales.filter(s=>
-    s.status!=='cancelled'
-  );
-
-  let st=valid.reduce(
-    (n,s)=>n+s.total,
-    0
-  );
-
-  let received=pay.reduce(
-    (n,p)=>
-      n+(
-        p.status!=='cancelled'
-        ?Number(p.amount||0)
-        :0
-      ),
-    0
-  );
-
-  let deb=cus.reduce(
-    (n,c)=>n+balance(c.id),
-    0
-  );
-
-  let ex=exp.reduce(
-    (n,e)=>n+e.amount,
-    0
-  );
-
-  $('#reports-content').innerHTML=`
-    <div class="panel">
-      <p>
-        Total sales:
-        <b>${money(st)}</b>
-      </p>
-
-      <p>
-        Payments received:
-        <b>${money(received)}</b>
-      </p>
-
-      <p>
-        Credit outstanding:
-        <b>${money(deb)}</b>
-      </p>
-
-      <p>
-        Expenses:
-        <b>${money(ex)}</b>
-      </p>
-
-      <p>
-        Net cash movement:
-        <b>${money(received-ex)}</b>
-      </p>
-
-      <p>
-        Orders:
-        <b>${valid.length}</b>
-      </p>
-    </div>
-  `;
-}
-
-function renderExpenses(){
-  let r=$('#expenses-content');
-
-  r.innerHTML=`
-    <div class="panel">
-      <button class="primary" id="ae">
-        + Add Expense
+      <button class="card" data-section="student">
+        🎓
+        <b>Student</b>
+        <small>
+          Study materials, courses, assignments and academic records.
+        </small>
       </button>
 
-      <div id="ef"></div>
-    </div>
-
-    <div class="panel">
-      ${
-        exp
-          .slice()
-          .reverse()
-          .map(x=>
-            `${x.date} — ${esc(x.description)} — ${money(x.amount)}`
-          )
-          .join('<br>')
-          ||'No expenses.'
-      }
-    </div>
-  `;
-
-  $('#ae').onclick=()=>{
-    $('#ef').innerHTML=`
-      <form id="exf">
-
-        <input
-          id="ed"
-          placeholder="Description"
-          required
-        ><br><br>
-
-        <input
-          id="ea"
-          type="number"
-          min="0"
-          placeholder="Amount"
-          required
-        ><br><br>
-
-        <input
-          id="exd"
-          type="date"
-          value="${today()}"
-          required
-        ><br><br>
-
-        <button class="primary">
-          Save Expense
-        </button>
-
-      </form>
-    `;
-
-    $('#exf').onsubmit=e=>{
-      e.preventDefault();
-
-      exp.push({
-        id:uid('EXP'),
-        description:$('#ed').value,
-        amount:Number($('#ea').value),
-        date:$('#exd').value
-      });
-
-      save(K.exp,exp);
-
-      renderExpenses();
-    };
-  };
-}
-
-function renderSettings(){
-  let s=$('#settings');
-  let r=$('.freeofis-set',s);
-
-  if(!r){
-    r=document.createElement('div');
-    r.className='freeofis-set';
-    s.appendChild(r);
-  }
-
-  r.innerHTML=`
-    <div class="panel">
-
-      <h3>
-        Seller / Store Information
-      </h3>
-
-      <form id="bf">
-
-        <input
-          id="bn"
-          placeholder="Store name"
-          value="${esc(biz.name)}"
-        ><br><br>
-
-        <input
-          id="ba"
-          placeholder="Address"
-          value="${esc(biz.address)}"
-        ><br><br>
-
-        <input
-          id="bp"
-          placeholder="Phone"
-          value="${esc(biz.phone)}"
-        ><br><br>
-
-        <input
-          id="be"
-          placeholder="Email"
-          value="${esc(biz.email)}"
-        ><br><br>
-
-        <button class="primary">
-          Save
-        </button>
-
-      </form>
-    </div>
-  `;
-
-  $('#bf').onsubmit=e=>{
-    e.preventDefault();
-
-    biz={
-      name:$('#bn').value,
-      address:$('#ba').value,
-      phone:$('#bp').value,
-      email:$('#be').value
-    };
-
-    save(K.biz,biz);
-
-    alert('Seller information saved.');
-  };
-}
-
-function modal(h){
-  let o=document.createElement('div');
-
-  o.style=
-    'position:fixed;inset:0;background:#0008;z-index:9999;padding:20px;overflow:auto';
-
-  o.innerHTML=`
-    <div
-      style="background:white;max-width:800px;margin:40px auto;padding:24px;border-radius:12px"
-    >
-      <button
-        id="x"
-        style="float:right"
-      >
-        Close
+      <button class="card" data-section="media">
+        🎥
+        <b>Media</b>
+        <small>
+          Stories, contacts, publications and media resources.
+        </small>
       </button>
 
-      ${h}
+      <button class="card" data-section="office">
+        🗂️
+        <b>Office</b>
+        <small>
+          Documents, tasks, meetings and office records.
+        </small>
+      </button>
+
+      <button class="card" data-section="personal">
+        👤
+        <b>Personal</b>
+        <small>
+          Personal records, notes, plans and everyday organisation.
+        </small>
+      </button>
+
     </div>
-  `;
 
-  document.body.appendChild(o);
+  </section>
 
-  $('#x',o).onclick=()=>o.remove();
-}
 
-renderInv();
-renderSales();
-show('home');
+  <section id="business" class="section">
 
-});
+    <div class="heading">
+      <h2>Business</h2>
+
+      <p>
+        Manage your business from one workspace.
+      </p>
+    </div>
+
+  </section>
+
+
+  <section id="student" class="section">
+
+    <div class="heading">
+      <h2>Student</h2>
+
+      <p>
+        Tools for studying, organising academic work and managing school records.
+      </p>
+    </div>
+
+    <div class="quick">
+
+      <button class="card">
+        📚
+        <b>Courses</b>
+        <small>Organise courses and subjects.</small>
+      </button>
+
+      <button class="card">
+        📝
+        <b>Assignments</b>
+        <small>Track assignments and deadlines.</small>
+      </button>
+
+      <button class="card">
+        📖
+        <b>Notes</b>
+        <small>Store and organise study notes.</small>
+      </button>
+
+      <button class="card">
+        🗓️
+        <b>Timetable</b>
+        <small>Manage classes and academic schedules.</small>
+      </button>
+
+    </div>
+
+  </section>
+
+
+  <section id="media" class="section">
+
+    <div class="heading">
+      <h2>Media</h2>
+
+      <p>
+        A workspace for journalists, bloggers, publishers and media professionals.
+      </p>
+    </div>
+
+    <div class="quick">
+
+      <button class="card">
+        📰
+        <b>Stories</b>
+        <small>Organise stories and articles.</small>
+      </button>
+
+      <button class="card">
+        👥
+        <b>Contacts</b>
+        <small>Manage sources, contacts and contributors.</small>
+      </button>
+
+      <button class="card">
+        🎥
+        <b>Media Assets</b>
+        <small>Organise photos, videos and other media.</small>
+      </button>
+
+      <button class="card">
+        📋
+        <b>Publications</b>
+        <small>Track published and pending materials.</small>
+      </button>
+
+    </div>
+
+  </section>
+
+
+  <section id="office" class="section">
+
+    <div class="heading">
+      <h2>Office</h2>
+
+      <p>
+        Organise everyday office work without unnecessary complexity.
+      </p>
+    </div>
+
+    <div class="quick">
+
+      <button class="card">
+        📄
+        <b>Documents</b>
+        <small>Create and organise office documents.</small>
+      </button>
+
+      <button class="card">
+        ✅
+        <b>Tasks</b>
+        <small>Track work that needs to be completed.</small>
+      </button>
+
+      <button class="card">
+        🗓️
+        <b>Meetings</b>
+        <small>Keep track of meetings and schedules.</small>
+      </button>
+
+      <button class="card">
+        📋
+        <b>Records</b>
+        <small>Maintain important office records.</small>
+      </button>
+
+    </div>
+
+  </section>
+
+
+  <section id="personal" class="section">
+
+    <div class="heading">
+      <h2>Personal</h2>
+
+      <p>
+        Organise your personal information, plans and everyday records.
+      </p>
+    </div>
+
+    <div class="quick">
+
+      <button class="card">
+        📝
+        <b>Notes</b>
+        <small>Keep personal notes and ideas.</small>
+      </button>
+
+      <button class="card">
+        📋
+        <b>Records</b>
+        <small>Keep useful personal records.</small>
+      </button>
+
+      <button class="card">
+        🗓️
+        <b>Plans</b>
+        <small>Organise plans and important dates.</small>
+      </button>
+
+    </div>
+
+  </section>
+
+
+  <section id="records" class="section">
+    <div class="heading">
+      <h2>Records</h2>
+      <p>Business records, sales, expenses and other transactions.</p>
+    </div>
+  </section>
+
+
+  <section id="inventory" class="section">
+
+    <div class="heading">
+      <h2>Inventory</h2>
+      <p>Keep track of products and supplies.</p>
+    </div>
+
+  </section>
+
+
+  <section id="documents" class="section">
+
+    <div class="heading">
+      <h2>Documents</h2>
+      <p>Create, store and organise your documents.</p>
+    </div>
+
+  </section>
+
+
+  <section id="tools" class="section">
+
+    <div class="heading">
+      <h2>AI Tools</h2>
+      <p>Tools designed to simplify everyday work.</p>
+    </div>
+
+  </section>
+
+
+  <section id="settings" class="section">
+
+    <div class="heading">
+      <h2>Settings</h2>
+      <p>Manage your Free Ofis workspace.</p>
+    </div>
+
+  </section>
+
+
+  <section id="help" class="section">
+
+    <div class="heading">
+      <h2>Help</h2>
+      <p>Get help using Free Ofis.</p>
+    </div>
+
+  </section>
+
+
+</main>
+
+<script src="app.js"></script>
+
+</body>
+</html>
