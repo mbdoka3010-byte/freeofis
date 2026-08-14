@@ -28,7 +28,14 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const save = (key, value) => {
-    localStorage.setItem(key, JSON.stringify(value));
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+      return true;
+    } catch (e) {
+      console.error('Free Ofis storage error:', e);
+      alert('Free Ofis could not save this change. Please check available browser storage.');
+      return false;
+    }
   };
 
   const uid = prefix =>
@@ -126,12 +133,23 @@ document.addEventListener('DOMContentLoaded', () => {
      GENERAL HELPERS
      ========================================================= */
 
+  const num = v => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const roundMoney = v =>
+    Math.round((num(v) + Number.EPSILON) * 100) / 100;
+
   const money = n =>
     '₦' +
-    Number(n || 0).toLocaleString('en-NG', {
+    roundMoney(n).toLocaleString('en-NG', {
       minimumFractionDigits: 0,
       maximumFractionDigits: 2
     });
+
+  /* Monetary tolerance for floating-point comparisons (kobo-level). */
+  const MONEY_EPSILON = 0.01;
 
   const esc = v =>
     String(v ?? '').replace(
@@ -175,7 +193,8 @@ document.addEventListener('DOMContentLoaded', () => {
         name: x.name || 'Unnamed Item',
         quantity: Number(x.quantity || 0),
         price: Number(x.price || 0),
-        sku: x.sku || ''
+        sku: x.sku || '',
+        lowStock: Math.max(0, num(x.lowStock ?? 5))
       }))
     : [];
 
@@ -284,59 +303,117 @@ document.addEventListener('DOMContentLoaded', () => {
     .filter(p => p.amount > 0);
 
   /* =========================================================
-     REPAIR OLD SALES THAT HAD PAYMENT BUT NO PAYMENT RECORD
+     VERSIONED DATA MIGRATION / REPAIR
+     Runs only when freeofis_data_version is below current.
+     Never deletes existing payments. Ambiguous unlinked
+     payments are left unlinked rather than guessed onto a sale.
      ========================================================= */
 
-  sales.forEach(s => {
-    const linked = pay
-      .filter(
-        p =>
-          p.saleId === s.id &&
-          p.status !== 'cancelled'
-      )
-      .reduce((n, p) => n + Number(p.amount || 0), 0);
+  const DATA_VERSION = 3;
+  let dataVersion = Number(
+    localStorage.getItem('freeofis_data_version') || 0
+  );
+  let migrationChanged = false;
 
-    const legacyUnlinked = pay.some(
-      p =>
-        !p.saleId &&
-        p.customerId === s.customerId &&
-        Number(p.amount || 0) === Number(s.paid || 0) &&
-        transactionDate(p.transactionAt || p.date) ===
-          transactionDate(s.transactionAt || s.date) &&
-        p.status !== 'cancelled'
+  if (dataVersion < DATA_VERSION) {
+    // Repair legacy payment links and normalize financial fields.
+    // Existing records are preserved; ambiguous payments are never guessed onto sales.
+    sales.forEach(s => {
+      if (!s || s.status === 'cancelled') return;
+
+      s.total = roundMoney(s.total);
+      s.items = Array.isArray(s.items) ? s.items.map(i => ({
+        ...i,
+        quantity: Math.max(0, num(i.quantity)),
+        unitPrice: roundMoney(i.unitPrice),
+        subtotal: roundMoney(num(i.quantity) * num(i.unitPrice))
+      })) : [];
+
+      const linked = pay
+        .filter(p => p.saleId === s.id && p.status !== 'cancelled')
+        .reduce((n, p) => n + num(p.amount), 0);
+
+      s.paid = roundMoney(linked);
+      s.balance = roundMoney(Math.max(0, s.total - linked));
+    });
+
+    pay = pay.map(p => {
+      const sale = p.saleId ? sales.find(s => s.id === p.saleId) : null;
+      return {
+        ...p,
+        amount: roundMoney(p.amount),
+        customerId: p.customerId || sale?.customerId || null
+      };
+    });
+
+    exp = exp.map(e => ({
+      ...e,
+      amount: Math.max(0, roundMoney(e.amount))
+    }));
+
+    // Repair sales that record a paid amount but have no
+    // corresponding payment record. We only create a payment
+    // when the sale itself is the source of truth (s.paid > 0
+    // and no already-linked payments). We do NOT attempt to
+    // match unlinked payments by customer+amount+date because
+    // that matching is non-deterministic when a customer has
+    // multiple same-amount orders on the same day.
+    sales.forEach(s => {
+      if (!s || s.status === 'cancelled') return;
+
+      const linked = pay
+        .filter(
+          p =>
+            p.saleId === s.id &&
+            p.status !== 'cancelled'
+        )
+        .reduce((n, p) => n + Number(p.amount || 0), 0);
+
+      if (Number(s.paid || 0) > 0 && linked === 0) {
+        pay.push({
+          id: uid('PAY'),
+          customerId: s.customerId || null,
+          saleId: s.id,
+          amount: roundMoney(s.paid),
+          date: transactionDate(s.transactionAt || s.date),
+          time: transactionTime(s.transactionAt) || '00:00',
+          transactionAt:
+            s.transactionAt ||
+            transactionTimestamp(
+              transactionDate(s.date),
+              transactionTime(s.transactionAt) || '00:00'
+            ),
+          method: s.method || 'cash',
+          reference: s.reference || '',
+          status: 'completed'
+        });
+        migrationChanged = true;
+      }
+    });
+
+    // Recompute cached payment fields after any repair-created payments.
+    sales.forEach(s => {
+      if (!s || s.status === 'cancelled') return;
+      syncSalePaymentFields(s);
+    });
+
+    localStorage.setItem(
+      'freeofis_data_version',
+      String(DATA_VERSION)
     );
+    migrationChanged = true;
+  }
 
-    if (
-      Number(s.paid || 0) > 0 &&
-      linked === 0 &&
-      !legacyUnlinked
-    ) {
-      pay.push({
-        id: uid('PAY'),
-        customerId: s.customerId || null,
-        saleId: s.id,
-        amount: Number(s.paid),
-        date: transactionDate(s.transactionAt || s.date),
-        time: transactionTime(s.transactionAt) || '00:00',
-        transactionAt:
-          s.transactionAt ||
-          transactionTimestamp(
-            transactionDate(s.date),
-            transactionTime(s.transactionAt) || '00:00'
-          ),
-        method: s.method || 'cash',
-        reference: s.reference || '',
-        status: 'completed'
-      });
-    }
-  });
-
-  save(K.inv, inv);
-  save(K.cus, cus);
-  save(K.sales, sales);
-  save(K.pay, pay);
-  save(K.exp, exp);
-  save(K.biz, biz);
+  // Persist only when normalisation or migration actually changed data.
+  // (Normalisation above may have added missing ids / defaults.)
+  if (migrationChanged || dataVersion < DATA_VERSION) {
+    save(K.inv, inv);
+    save(K.cus, cus);
+    save(K.sales, sales);
+    save(K.pay, pay);
+    save(K.exp, exp);
+    save(K.biz, biz);
+  }
 
   /* =========================================================
      TITLES
@@ -420,11 +497,53 @@ document.addEventListener('DOMContentLoaded', () => {
     'Record business expenses.'
   );
 
-  /* =========================================================
-     NAVIGATION
-     ========================================================= */
+  // These sections are created only when the host HTML does not already provide them.
+  // This lets Free Ofis grow into a multi-workspace platform without breaking the existing shell.
+  section('student', 'Student', 'Study, assignments, notes and personal academic records.');
+  section('media', 'Media', 'Content planning, clients, publications and media workflows.');
+  section('office', 'Office', 'Documents, tasks, contacts and everyday office administration.');
+  section('personal', 'Personal', 'Personal records, planning and lightweight organization.');
 
-  function show(id) {
+  /* =========================================================
+     NAVIGATION + INTERNAL HISTORY STACK
+     =========================================================
+     - navigate(id) pushes onto the stack (unless already top)
+     - show(id, {replace:true}) or goBack() does not push
+     - rendering a view never auto-pushes
+     - Back is hidden/disabled at the root of the stack
+     - hierarchy example: business → records → (customer modal)
+       → order → payment. Main sections use this stack.
+  */
+
+  const navStack = [];
+  let currentSection = 'home';
+
+  function updateBackUI() {
+    let btn = $('#freeofis-back');
+    if (!btn) {
+      const topbar = $('.topbar');
+      if (topbar) {
+        btn = document.createElement('button');
+        btn.id = 'freeofis-back';
+        btn.type = 'button';
+        btn.textContent = '← Back';
+        btn.style.cssText =
+          'margin-right:12px;padding:6px 12px;cursor:pointer;';
+        topbar.insertBefore(btn, topbar.firstChild);
+        btn.onclick = () => goBack();
+      }
+    }
+    if (btn) {
+      const canGoBack = navStack.length > 1;
+      btn.style.display = canGoBack ? '' : 'none';
+      btn.disabled = !canGoBack;
+    }
+  }
+
+  function show(id, opts = {}) {
+    const replace = !!opts.replace;
+    const isBack = !!opts.back;
+
     $$('.section').forEach(s =>
       s.classList.toggle('show', s.id === id)
     );
@@ -440,8 +559,23 @@ document.addEventListener('DOMContentLoaded', () => {
       title.textContent = titles[id] || 'Free Ofis';
     }
 
+    currentSection = id;
+
+    if (!isBack && !replace) {
+      if (navStack[navStack.length - 1] !== id) {
+        navStack.push(id);
+      }
+    }
+
+    updateBackUI();
+
     const renders = {
+      home: renderHome,
       business: renderBusiness,
+      student: renderStudent,
+      media: renderMedia,
+      office: renderOffice,
+      personal: renderPersonal,
       records: renderSales,
       inventory: renderInv,
       customers: renderCus,
@@ -455,14 +589,24 @@ document.addEventListener('DOMContentLoaded', () => {
     if (renders[id]) renders[id]();
   }
 
+  function navigate(id) {
+    show(id); // pushes
+  }
+
+  function goBack() {
+    if (navStack.length <= 1) return;
+    navStack.pop();
+    const prev = navStack[navStack.length - 1] || 'home';
+    show(prev, { back: true });
+  }
+
   function wire() {
     $$('[data-section]').forEach(x => {
       if (x.dataset.wired) return;
 
       x.dataset.wired = '1';
 
-      x.onclick = () =>
-        show(x.dataset.section);
+      x.onclick = () => navigate(x.dataset.section);
     });
 
     $$('.card').forEach(card => {
@@ -476,7 +620,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'credit & debtors': 'credit',
         receipts: 'receipts',
         reports: 'reports',
-        'sales & records': 'records',
+        'sales & orders': 'records',
         inventory: 'inventory'
       };
 
@@ -484,7 +628,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (text.includes(key)) {
           card.dataset.wired = '1';
           card.dataset.section = map[key];
-          card.onclick = () => show(map[key]);
+          card.onclick = () => navigate(map[key]);
           break;
         }
       }
@@ -492,6 +636,119 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   wire();
+
+  /* =========================================================
+     HOME / WORKSPACE OVERVIEW
+     ========================================================= */
+
+  function renderHome() {
+    const root = $('#home');
+    if (!root) return;
+
+    let r = $('.freeofis-home', root);
+    if (!r) {
+      r = document.createElement('div');
+      r.className = 'freeofis-home';
+      root.appendChild(r);
+    }
+
+    const activeSales = sales.filter(s => s.status !== 'cancelled');
+    const todaySales = activeSales
+      .filter(s => transactionDate(s.transactionAt || s.date) === today())
+      .reduce((n, s) => n + num(s.total), 0);
+    const todayReceived = pay
+      .filter(p => p.status !== 'cancelled' && transactionDate(p.transactionAt || p.date) === today())
+      .reduce((n, p) => n + num(p.amount), 0);
+    const stockUnits = inv.reduce((n, x) => n + num(x.quantity), 0);
+    const stockValue = inv.reduce((n, x) => n + num(x.quantity) * num(x.price), 0);
+    const debt = cus.reduce((n, c) => n + balance(c.id), 0);
+    const lowStock = inv.filter(x => num(x.quantity) <= num(x.lowStock ?? 5));
+
+    r.innerHTML = `
+      <div class="panel">
+        <h2>${esc(biz.name || 'Free Ofis')}</h2>
+        <p>Your central workspace. Choose a module below to continue.</p>
+      </div>
+
+      <div class="panel">
+        <h3>Today</h3>
+        <p>Sales: <b>${money(todaySales)}</b></p>
+        <p>Payments received: <b>${money(todayReceived)}</b></p>
+        <p>Outstanding credit: <b>${money(debt)}</b></p>
+      </div>
+
+      <div class="panel">
+        <h3>Business Snapshot</h3>
+        <p>Stock units: <b>${stockUnits.toLocaleString()}</b></p>
+        <p>Stock value: <b>${money(stockValue)}</b></p>
+        <p>Low-stock items: <b>${lowStock.length}</b></p>
+        <p>Customers: <b>${cus.length}</b></p>
+      </div>
+
+      <div class="panel">
+        <h3>Workspaces</h3>
+        <button data-home-nav="business">Business</button>
+        <button data-home-nav="student">Student</button>
+        <button data-home-nav="media">Media</button>
+        <button data-home-nav="office">Office</button>
+        <button data-home-nav="personal">Personal</button>
+      </div>
+
+      <div class="panel">
+        <h3>Quick Actions</h3>
+        <button class="primary" data-home-nav="records">New Sale / Orders</button>
+        <button data-home-nav="inventory">Inventory</button>
+        <button data-home-nav="customers">Customers</button>
+        <button data-home-nav="reports">Reports</button>
+      </div>
+    `;
+
+    $$('[data-home-nav]', r).forEach(b => {
+      b.onclick = () => navigate(b.dataset.homeNav);
+    });
+  }
+
+  function renderWorkspace(id, name, description, modules) {
+    const root = $('#' + id);
+    if (!root) return;
+    let r = $('.freeofis-workspace', root);
+    if (!r) {
+      r = document.createElement('div');
+      r.className = 'freeofis-workspace';
+      root.appendChild(r);
+    }
+    r.innerHTML = `
+      <div class="panel">
+        <h2>${esc(name)}</h2>
+        <p>${esc(description)}</p>
+      </div>
+      <div class="panel">
+        <h3>Workspace modules</h3>
+        ${modules.map(m => `
+          <button type="button" data-workspace-module="${esc(m)}">${esc(m)}</button>
+        `).join('')}
+      </div>
+    `;
+    $$('[data-workspace-module]', r).forEach(b => {
+      b.onclick = () => alert(`${b.dataset.workspaceModule} is part of the Free Ofis workspace roadmap and can be enabled as the module is implemented.`);
+    });
+  }
+
+  function renderStudent() {
+    renderWorkspace('student', 'Student', 'A dedicated workspace for academic organization.', ['Courses', 'Assignments', 'Notes', 'Study Planner']);
+  }
+
+  function renderMedia() {
+    renderWorkspace('media', 'Media', 'A dedicated workspace for media and content operations.', ['Content Planner', 'Clients', 'Publications', 'Production Tracker']);
+  }
+
+  function renderOffice() {
+    renderWorkspace('office', 'Office', 'A dedicated workspace for everyday office administration.', ['Documents', 'Tasks', 'Contacts', 'Office Records']);
+  }
+
+  function renderPersonal() {
+    renderWorkspace('personal', 'Personal', 'A lightweight workspace for personal organization.', ['Notes', 'Tasks', 'Records', 'Planner']);
+  }
 
   /* =========================================================
      DATA HELPERS
@@ -577,13 +834,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /*
      IMPORTANT:
-     Order payments are now validated against the ORDER balance,
+     Order payments are validated against the ORDER balance,
      not against the customer's aggregate balance.
 
-     This fixes the previous:
-     "Payment could not be recorded."
-     problem.
+     MONEY_EPSILON tolerates floating-point noise so a payment
+     that is effectively equal to the remaining balance is accepted.
+     Meaningful overpayments are still rejected.
+
+     Idempotency: a short-lived signature of (saleId|cid + amount +
+     rounded timestamp) prevents accidental double-submission from
+     double-clicks or immediate retries of the exact same request.
+     Legitimate separate payments (even of the same amount) are allowed
+     once the signature window expires or the amount/sale differs.
   */
+
+  const recentPaySignatures = new Set();
+  const PAY_IDEMPOTENCY_MS = 2500;
 
   function addPay(
     cid,
@@ -594,39 +860,71 @@ document.addEventListener('DOMContentLoaded', () => {
     saleId = null,
     time = timeNow()
   ) {
-    const amt = Number(amount);
+    let amt = roundMoney(amount);
 
-    if (!amt || amt <= 0) {
+    if (!Number.isFinite(amt) || amt <= 0) {
       return false;
+    }
+
+    // Explicit customer validation for non-sale payments
+    if (!saleId) {
+      if (!cid || !customer(cid)) {
+        return false;
+      }
     }
 
     if (saleId) {
       const s = sales.find(x => x.id === saleId);
 
-      if (
-        !s ||
-        s.status === 'cancelled' ||
-        amt > saleBalance(s)
-      ) {
+      if (!s || s.status === 'cancelled') {
         return false;
       }
 
-      if (s.customerId !== cid) {
+      if (s.customerId && s.customerId !== cid) {
         return false;
+      }
+
+      const bal = saleBalance(s);
+      if (amt > bal + MONEY_EPSILON) {
+        return false;
+      }
+      // Normalize floating-point noise to exact remaining balance
+      if (Math.abs(amt - bal) <= MONEY_EPSILON) {
+        amt = bal;
       }
     } else {
-      if (!cid || amt > balance(cid)) {
+      const bal = balance(cid);
+      if (amt > bal + MONEY_EPSILON) {
         return false;
       }
+      if (Math.abs(amt - bal) <= MONEY_EPSILON) {
+        amt = bal;
+      }
     }
+
+    // Deterministic short-window idempotency signature
+    const sig =
+      (saleId || cid || '') +
+      '|' +
+      amt.toFixed(2) +
+      '|' +
+      Math.floor(Date.now() / 1000);
+    if (recentPaySignatures.has(sig)) {
+      return false; // duplicate submission blocked
+    }
+    recentPaySignatures.add(sig);
+    setTimeout(
+      () => recentPaySignatures.delete(sig),
+      PAY_IDEMPOTENCY_MS
+    );
 
     const transactionAt =
       transactionTimestamp(date, time);
 
-    pay.push({
+    const paymentRecord = {
       id: uid('PAY'),
-      customerId: cid,
-      saleId,
+      customerId: cid || null,
+      saleId: saleId || null,
       amount: amt,
       date,
       time,
@@ -634,18 +932,63 @@ document.addEventListener('DOMContentLoaded', () => {
       method,
       reference,
       status: 'completed'
-    });
+    };
 
-    save(K.pay, pay);
+    pay.push(paymentRecord);
+
+    if (!save(K.pay, pay)) {
+      pay.pop();
+      return false;
+    }
 
     if (saleId) {
       const s = sales.find(x => x.id === saleId);
-
       if (s) {
         syncSalePaymentFields(s);
         save(K.sales, sales);
       }
     }
+
+    return true;
+  }
+
+  /**
+   * Cancel an individual payment (does NOT cancel the sale).
+   * Marks status=cancelled + cancelledAt. History is preserved.
+   * Idempotent: already-cancelled payments are left untouched.
+   */
+  function cancelPayment(payId) {
+    const p = pay.find(x => x.id === payId);
+    if (!p || p.status === 'cancelled') {
+      return false;
+    }
+
+    if (
+      !confirm(
+        'Cancel this payment? The payment will remain in history but will no longer affect balances.'
+      )
+    ) {
+      return false;
+    }
+
+    p.status = 'cancelled';
+    p.cancelledAt = localDateTime();
+
+    save(K.pay, pay);
+
+    if (p.saleId) {
+      const s = sales.find(x => x.id === p.saleId);
+      if (s) {
+        syncSalePaymentFields(s);
+        save(K.sales, sales);
+      }
+    }
+
+    renderSales();
+    renderCredit();
+    renderCus();
+    renderReports();
+    if (typeof renderReceipts === 'function') renderReceipts();
 
     return true;
   }
@@ -727,7 +1070,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ['br', 'receipts'],
       ['brep', 'reports']
     ].forEach(([a, b]) => {
-      $('#' + a).onclick = () => show(b);
+      $('#' + a).onclick = () => navigate(b);
     });
   }
 
@@ -782,6 +1125,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         <h3>Inventory</h3>
 
+        <input id="isearch" placeholder="Search inventory by name or SKU">
+        <br><br>
+
         <div id="il">
 
           ${
@@ -804,6 +1150,9 @@ document.addEventListener('DOMContentLoaded', () => {
                           Number(x.quantity || 0) *
                           Number(x.price || 0)
                         )}
+                        <br>
+                        Low-stock threshold: ${num(x.lowStock ?? 5)}
+                        ${num(x.quantity) <= num(x.lowStock ?? 5) ? '<br><b>⚠ Low stock</b>' : ''}
 
                         ${
                           x.sku
@@ -835,6 +1184,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     $('#addstock').onclick = () => invForm();
 
+    $('#isearch').oninput = () => {
+      const q = norm($('#isearch').value);
+      $$('#il .panel', r).forEach(card => {
+        card.style.display = !q || norm(card.textContent).includes(q) ? '' : 'none';
+      });
+    };
+
     $$('[data-ie]', r).forEach(
       b =>
         (b.onclick = () =>
@@ -844,17 +1200,18 @@ document.addEventListener('DOMContentLoaded', () => {
     $$('[data-id]', r).forEach(
       b =>
         (b.onclick = () => {
-          if (
-            !confirm(
-              'Delete this inventory item?'
-            )
-          )
-            return;
-
-          inv = inv.filter(
-            x => x.id !== b.dataset.id
+          const id = b.dataset.id;
+          const usedInSales = sales.some(s =>
+            s.status !== 'cancelled' && (s.items || []).some(i => i.productId === id)
           );
 
+          if (usedInSales) {
+            return alert('This item is referenced by a previous sale and cannot be deleted. Set its quantity to 0 or edit it instead so historical records remain intact.');
+          }
+
+          if (!confirm('Delete this inventory item?')) return;
+
+          inv = inv.filter(x => x.id !== id);
           save(K.inv, inv);
           renderInv();
         })
@@ -893,9 +1250,20 @@ document.addEventListener('DOMContentLoaded', () => {
           id="ip"
           type="number"
           min="0"
+          step="0.01"
           required
           placeholder="Selling price"
           value="${old?.price ?? 0}"
+        >
+        <br><br>
+
+        <input
+          id="ilt"
+          type="number"
+          min="0"
+          step="1"
+          placeholder="Low-stock alert threshold"
+          value="${old?.lowStock ?? 5}"
         >
         <br><br>
 
@@ -928,6 +1296,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const price =
         Number($('#ip').value);
 
+      const lowStock =
+        Number($('#ilt').value);
+
       if (!name) {
         return alert(
           'Enter an item name.'
@@ -952,6 +1323,10 @@ document.addEventListener('DOMContentLoaded', () => {
         );
       }
 
+      if (!Number.isFinite(lowStock) || lowStock < 0) {
+        return alert('Enter a valid low-stock threshold.');
+      }
+
       /*
          When adding a NEW item, avoid creating a second
          inventory record for the same product.
@@ -970,7 +1345,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (duplicate) {
           duplicate.quantity += quantity;
-          duplicate.price = price;
+          duplicate.price = roundMoney(price);
+          duplicate.lowStock = lowStock;
 
           if (sku) {
             duplicate.sku = sku;
@@ -989,7 +1365,8 @@ document.addEventListener('DOMContentLoaded', () => {
         id: old?.id || uid('ITEM'),
         name,
         quantity,
-        price,
+        price: roundMoney(price),
+        lowStock,
         sku
       };
 
@@ -1378,10 +1755,14 @@ document.addEventListener('DOMContentLoaded', () => {
       );
     }
 
-    if (paid > total) {
+    if (paid > total + MONEY_EPSILON) {
       return alert(
         'Amount paid cannot exceed the order total.'
       );
+    }
+    if (Math.abs(paid - total) <= MONEY_EPSILON) {
+      // normalize floating-point noise
+      // (paid already captured; will be used as-is after clamp if needed)
     }
 
     if (
@@ -1824,7 +2205,7 @@ Payment amount:`
     if (
       !Number.isFinite(amount) ||
       amount <= 0 ||
-      amount > current
+      amount > current + MONEY_EPSILON
     ) {
       return alert(
         'Invalid payment.'
@@ -1918,6 +2299,8 @@ ${money(saleBalance(s))}`
     const s =
       sales.find(x => x.id === id);
 
+    // Idempotent: already-cancelled sales are left untouched
+    // (no second inventory restore, no re-processing).
     if (
       !s ||
       s.status === 'cancelled'
@@ -1934,25 +2317,26 @@ ${money(saleBalance(s))}`
     }
 
     s.status = 'cancelled';
+    s.cancelledAt = localDateTime();
 
+    // Cascade-cancel linked payments so they no longer affect balances.
+    // Individual payments can still be cancelled separately via cancelPayment().
     pay
       .filter(
         p =>
           p.saleId === s.id &&
           p.status !== 'cancelled'
       )
-      .forEach(
-        p =>
-          (p.status = 'cancelled')
-      );
+      .forEach(p => {
+        p.status = 'cancelled';
+        p.cancelledAt = s.cancelledAt;
+      });
 
-    s.items.forEach(i => {
-      const p =
-        item(i.productId);
-
+    // Restore inventory exactly once (guarded by the status check above).
+    (s.items || []).forEach(i => {
+      const p = item(i.productId);
       if (p) {
-        p.quantity +=
-          Number(i.quantity || 0);
+        p.quantity += Number(i.quantity || 0);
       }
     });
 
@@ -2230,12 +2614,11 @@ ${money(saleBalance(s))}`
             )
         );
 
+    // Include cancelled payments for audit/history; they are marked as cancelled.
     const customerPayments =
       pay
         .filter(
-          p =>
-            p.customerId === cid &&
-            p.status !== 'cancelled'
+          p => p.customerId === cid
         )
         .sort(
           (a, b) =>
@@ -2403,6 +2786,11 @@ ${money(saleBalance(s))}`
                     ${esc(
                       p.method
                     )}
+                    ${
+                      p.status === 'cancelled'
+                        ? ' <em>(cancelled)</em>'
+                        : ''
+                    }
 
                     ${
                       p.reference
@@ -2412,6 +2800,18 @@ ${money(saleBalance(s))}`
                           ${esc(
                             p.reference
                           )}
+                        `
+                        : ''
+                    }
+
+                    ${
+                      p.status !== 'cancelled'
+                        ? `
+                          <br>
+                          <button data-cancel-pay="${esc(p.id)}"
+                            style="margin-top:4px;font-size:12px;">
+                            Cancel Payment
+                          </button>
                         `
                         : ''
                     }
@@ -2436,6 +2836,16 @@ ${money(saleBalance(s))}`
           receipt(
             b.dataset.cr
           ))
+    );
+
+    $$('[data-cancel-pay]').forEach(
+      b =>
+        (b.onclick = () => {
+          if (cancelPayment(b.dataset.cancelPay)) {
+            // re-open customer page to refresh list
+            customerPage(cid);
+          }
+        })
     );
   }
 
@@ -3219,7 +3629,7 @@ ${money(balance(cid))}`
     `;
 
     $('#editSeller').onclick =
-      () => show('settings');
+      () => navigate('settings');
 
     $$('[data-r]', r).forEach(
       b =>
@@ -3235,103 +3645,92 @@ ${money(balance(cid))}`
      ========================================================= */
 
   function renderReports() {
-    const valid =
-      sales.filter(
-        s =>
-          s.status !== 'cancelled'
-      );
+    const root = $('#reports-content');
+    if (!root) return;
 
-    const salesTotal =
-      valid.reduce(
-        (n, s) =>
-          n + Number(s.total || 0),
-        0
-      );
+    const active = sales.filter(s => s.status !== 'cancelled');
+    const todayDate = today();
+    const period = root.dataset.period || 'all';
 
-    const received =
-      pay.reduce(
-        (n, p) =>
-          n +
-          (
-            p.status !== 'cancelled'
-              ? Number(
-                  p.amount || 0
-                )
-              : 0
-          ),
-        0
-      );
+    const inPeriod = s => {
+      if (period === 'today') return transactionDate(s.transactionAt || s.date) === todayDate;
+      if (period === '7') {
+        const d = new Date(transactionDate(s.transactionAt || s.date) + 'T00:00:00');
+        const now = new Date(todayDate + 'T00:00:00');
+        return (now - d) >= 0 && (now - d) <= 7 * 86400000;
+      }
+      if (period === '30') {
+        const d = new Date(transactionDate(s.transactionAt || s.date) + 'T00:00:00');
+        const now = new Date(todayDate + 'T00:00:00');
+        return (now - d) >= 0 && (now - d) <= 30 * 86400000;
+      }
+      return true;
+    };
 
-    const debt =
-      cus.reduce(
-        (n, c) =>
-          n + balance(c.id),
-        0
-      );
+    const valid = active.filter(inPeriod);
+    const validSaleIds = new Set(valid.map(s => s.id));
+    const received = pay
+      .filter(p => p.status !== 'cancelled' && (!p.saleId || validSaleIds.has(p.saleId)))
+      .reduce((n, p) => n + num(p.amount), 0);
+    const salesTotal = valid.reduce((n, s) => n + num(s.total), 0);
+    const expenses = exp.filter(e => period === 'all' || (period === 'today' ? e.date === todayDate : true))
+      .reduce((n, e) => n + num(e.amount), 0);
+    const debt = cus.reduce((n, c) => n + balance(c.id), 0);
+    const stockValue = inv.reduce((n, x) => n + num(x.quantity) * num(x.price), 0);
 
-    const expenses =
-      exp.reduce(
-        (n, e) =>
-          n + Number(e.amount || 0),
-        0
-      );
+    const productTotals = {};
+    valid.forEach(s => (s.items || []).forEach(i => {
+      const key = i.productId || i.name || 'Unknown';
+      if (!productTotals[key]) productTotals[key] = { name: i.name || 'Unknown', qty: 0, value: 0 };
+      productTotals[key].qty += num(i.quantity);
+      productTotals[key].value += num(i.subtotal);
+    }));
 
-    $('#reports-content').innerHTML = `
+    const topProducts = Object.values(productTotals).sort((a, b) => b.value - a.value).slice(0, 5);
+
+    const methods = {};
+    pay.filter(p => p.status !== 'cancelled' && (!p.saleId || validSaleIds.has(p.saleId))).forEach(p => {
+      const method = p.method || 'other';
+      methods[method] = (methods[method] || 0) + num(p.amount);
+    });
+
+    root.innerHTML = `
       <div class="panel">
+        <h3>Report Period</h3>
+        <button data-period="all">All time</button>
+        <button data-period="today">Today</button>
+        <button data-period="7">Last 7 days</button>
+        <button data-period="30">Last 30 days</button>
+      </div>
 
-        <p>
-          Total sales:
-          <b>
-            ${money(
-              salesTotal
-            )}
-          </b>
-        </p>
+      <div class="panel">
+        <p>Total sales: <b>${money(salesTotal)}</b></p>
+        <p>Payments received: <b>${money(received)}</b></p>
+        <p>Credit outstanding: <b>${money(debt)}</b></p>
+        <p>Expenses: <b>${money(expenses)}</b></p>
+        <p>Net cash movement: <b>${money(received - expenses)}</b></p>
+        <p>Orders: <b>${valid.length}</b></p>
+        <p>Average order: <b>${money(valid.length ? salesTotal / valid.length : 0)}</b></p>
+        <p>Current stock value: <b>${money(stockValue)}</b></p>
+      </div>
 
-        <p>
-          Payments received:
-          <b>
-            ${money(
-              received
-            )}
-          </b>
-        </p>
+      <div class="panel">
+        <h3>Top Products</h3>
+        ${topProducts.length ? topProducts.map(x => `<p>${esc(x.name)} — ${x.qty} units — <b>${money(x.value)}</b></p>`).join('') : '<p>No sales in this period.</p>'}
+      </div>
 
-        <p>
-          Credit outstanding:
-          <b>
-            ${money(debt)}
-          </b>
-        </p>
-
-        <p>
-          Expenses:
-          <b>
-            ${money(
-              expenses
-            )}
-          </b>
-        </p>
-
-        <p>
-          Net cash movement:
-          <b>
-            ${money(
-              received -
-                expenses
-            )}
-          </b>
-        </p>
-
-        <p>
-          Orders:
-          <b>
-            ${valid.length}
-          </b>
-        </p>
-
+      <div class="panel">
+        <h3>Payments by Method</h3>
+        ${Object.keys(methods).length ? Object.entries(methods).sort((a,b) => b[1]-a[1]).map(([m,v]) => `<p>${esc(m)} — <b>${money(v)}</b></p>`).join('') : '<p>No payments in this period.</p>'}
       </div>
     `;
+
+    $$('[data-period]', root).forEach(b => {
+      b.onclick = () => {
+        root.dataset.period = b.dataset.period;
+        renderReports();
+      };
+    });
   }
 
   /* =========================================================
@@ -3555,7 +3954,22 @@ ${money(balance(cid))}`
         </form>
 
       </div>
+
+      <div class="panel">
+        <h3>Data Safety</h3>
+        <p>Export a complete Free Ofis backup before moving devices or making major changes.</p>
+        <button id="exportData">Export Backup</button>
+        <button id="importData">Import Backup</button>
+        <input id="importFile" type="file" accept="application/json" style="display:none">
+        <br><br>
+        <button id="resetDemo" type="button">Clear All Free Ofis Data</button>
+      </div>
     `;
+
+    $('#exportData').onclick = exportBackup;
+    $('#importData').onclick = () => $('#importFile').click();
+    $('#importFile').onchange = importBackup;
+    $('#resetDemo').onclick = clearAllData;
 
     $('#bf').onsubmit = e => {
       e.preventDefault();
@@ -3604,6 +4018,81 @@ ${money(balance(cid))}`
 
       renderSettings();
     };
+  }
+
+  /* =========================================================
+     DATA BACKUP / RESTORE
+     ========================================================= */
+
+  function exportBackup() {
+    const payload = {
+      app: 'Free Ofis',
+      version: DATA_VERSION,
+      exportedAt: localDateTime(),
+      data: {
+        inventory: inv,
+        customers: cus,
+        sales,
+        payments: pay,
+        expenses: exp,
+        business: biz
+      }
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `freeofis-backup-${today()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function importBackup(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const payload = JSON.parse(reader.result);
+        const d = payload?.data || payload;
+        if (!d || !Array.isArray(d.inventory) || !Array.isArray(d.customers) || !Array.isArray(d.sales) || !Array.isArray(d.payments) || !Array.isArray(d.expenses)) {
+          throw new Error('Invalid Free Ofis backup');
+        }
+
+        if (!confirm('Import this backup? Existing Free Ofis data will be replaced by the backup.')) return;
+
+        save(K.inv, d.inventory);
+        save(K.cus, d.customers);
+        save(K.sales, d.sales);
+        save(K.pay, d.payments);
+        save(K.exp, d.expenses);
+        save(K.biz, d.business || {});
+        localStorage.setItem('freeofis_data_version', String(DATA_VERSION));
+
+        alert('Backup imported. Reloading Free Ofis now.');
+        location.reload();
+      } catch (err) {
+        console.error(err);
+        alert('This file is not a valid Free Ofis backup.');
+      } finally {
+        e.target.value = '';
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function clearAllData() {
+    if (!confirm('This will permanently clear all Free Ofis inventory, customers, sales, payments, expenses and business information from this browser. Continue?')) return;
+    if (!confirm('Final confirmation: clear ALL Free Ofis data? Export a backup first if you may need it later.')) return;
+
+    Object.values(K).forEach(key => localStorage.removeItem(key));
+    localStorage.removeItem('freeofis_data_version');
+    alert('Free Ofis data cleared. Reloading now.');
+    location.reload();
   }
 
   /* =========================================================
@@ -3673,6 +4162,9 @@ ${money(balance(cid))}`
 
   renderInv();
   renderSales();
-  show('home');
+  // Start navigation stack at home (root). Back is hidden here.
+  navStack.length = 0;
+  navStack.push('home');
+  show('home', { replace: true });
 
 });
