@@ -1,2492 +1,2743 @@
-document.addEventListener('DOMContentLoaded',()=>{
-'use strict';
-
-const K={
-  inv:'freeofis_inventory',
-  cus:'freeofis_customers',
-  sales:'freeofis_sales',
-  pay:'freeofis_payments',
-  biz:'freeofis_business',
-  exp:'freeofis_expenses'
-};
-
-const $=(s,r=document)=>r.querySelector(s);
-const $$=(s,r=document)=>[...r.querySelectorAll(s)];
-
-const load=(k,d)=>{
-  try{
-    return JSON.parse(
-      localStorage.getItem(k)||JSON.stringify(d)
-    );
-  }catch(e){
-    return d;
-  }
-};
-
-const save=(k,v)=>
-  localStorage.setItem(k,JSON.stringify(v));
-
-const uid=p=>
-  p+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
-
-const today=()=>
-  new Date(
-    Date.now()-new Date().getTimezoneOffset()*60000
-  ).toISOString().slice(0,10);
-
-const money=n=>
-  '₦'+Number(n||0).toLocaleString('en-NG');
-
-const esc=v=>
-  String(v??'').replace(
-    /[&<>'"]/g,
-    m=>({
-      '&':'&amp;',
-      '<':'&lt;',
-      '>':'&gt;',
-      "'":'&#039;',
-      '"':'&quot;'
-    }[m])
-  );
-
-let inv=load(K.inv,[]);
-let cus=load(K.cus,[]);
-let sales=load(K.sales,[]);
-let pay=load(K.pay,[]);
-let exp=load(K.exp,[]);
-let biz=load(
-  K.biz,
-  {
-    name:'',
-    address:'',
-    phone:'',
-    email:''
-  }
-);
-
-inv=inv.map(x=>({
-  ...x,
-  id:x.id||uid('ITEM'),
-  quantity:Number(x.quantity||0),
-  price:Number(x.price||0)
-}));
-
-/* =========================================================
-   INVENTORY NORMALISATION
-   ========================================================= */
-
-const productIdMap={};
-const merged=[];
-
-const productKey=x=>[
-  String(x.name||'').trim().toLowerCase(),
-  Number(x.price||0),
-  String(x.sku||'').trim().toLowerCase()
-].join('||');
-
-/*
-  Identical products are consolidated by:
-  - product name
-  - selling price
-  - SKU/barcode
-
-  The first record becomes the surviving record.
-  Quantities are added together.
-  Historical sales are remapped to the surviving product ID.
-*/
-
-inv.forEach(x=>{
-  const key=productKey(x);
-
-  const existing=merged.find(
-    y=>productKey(y)===key
-  );
-
-  if(existing){
-    productIdMap[x.id]=existing.id;
-    existing.quantity+=Number(x.quantity||0);
-  }else{
-    merged.push({...x});
-  }
-});
-
-if(Object.keys(productIdMap).length){
-
-  sales=sales.map(s=>({
-    ...s,
-
-    itemId:
-      productIdMap[s.itemId]||s.itemId,
-
-    items:
-      Array.isArray(s.items)
-      ?s.items.map(i=>({
-          ...i,
-          productId:
-            productIdMap[i.productId]||i.productId
-        }))
-      :s.items
-  }));
-
-  inv=merged;
-}
-
-save(K.inv,inv);
-
-/*
-  Reusable consolidation function.
-
-  This is also called whenever inventory is added or edited,
-  so identical products cannot reappear later.
-*/
-
-function consolidateInventory(){
-
-  const map={};
-  const result=[];
-
-  inv.forEach(x=>{
-
-    const key=productKey(x);
-
-    const existing=result.find(
-      y=>productKey(y)===key
-    );
-
-    if(existing){
-
-      map[x.id]=existing.id;
-
-      existing.quantity+=
-        Number(x.quantity||0);
-
-    }else{
-
-      result.push(x);
-
-    }
-  });
-
-  if(Object.keys(map).length){
-
-    sales=sales.map(s=>({
-
-      ...s,
-
-      itemId:
-        map[s.itemId]||s.itemId,
-
-      items:
-        Array.isArray(s.items)
-        ?s.items.map(i=>({
-            ...i,
-            productId:
-              map[i.productId]||i.productId
-          }))
-        :s.items
-    }));
-
-    inv=result;
-
-    save(K.sales,sales);
-    save(K.inv,inv);
-  }
-}
-
-/* =========================================================
-   LEGACY SALES NORMALISATION
-   ========================================================= */
-
-sales=sales.map(s=>{
-
-  if(!Array.isArray(s.items)){
-
-    let total=
-      Number(
-        s.total??s.amount??0
-      );
-
-    let q=
-      Number(s.quantity||0);
-
-    s={
-      ...s,
-
-      total,
-
-      paid:
-        s.payment==='credit'
-        ?0
-        :total,
-
-      balance:
-        s.payment==='credit'
-        ?total
-        :0,
-
-      items:
-        q
-        ?[{
-            productId:s.itemId||'',
-            name:
-              s.itemName||
-              s.description||
-              'Previous item',
-            quantity:q,
-            unitPrice:
-              q
-              ?total/q
-              :total,
-            subtotal:total
-          }]
-        :[],
-
-      customerId:
-        s.customerId||null,
-
-      method:
-        s.method||
-        s.payment||
-        'cash',
-
-      status:
-        s.status||
-        'completed',
-
-      date:
-        s.date||
-        today()
-    };
-  }
-
-  return s;
-});
-
-save(K.sales,sales);
-
-/* =========================================================
-   PAYMENT NORMALISATION
-   ========================================================= */
-
-pay=
-  Array.isArray(pay)
-  ?pay
-    .map(p=>({
-      id:p.id||uid('PAY'),
-      customerId:p.customerId||null,
-      saleId:p.saleId||null,
-      amount:Number(p.amount||0),
-      date:p.date||today(),
-      method:p.method||'cash',
-      reference:p.reference||'',
-      status:p.status||'completed'
-    }))
-    .filter(p=>p.amount>0)
-  :[];
-
-/*
-  Repair legacy sales which contain a paid amount but
-  have no corresponding payment record.
-*/
-
-sales.forEach(s=>{
-
-  const linked=
-    pay
-      .filter(
-        p=>
-          p.saleId===s.id&&
-          p.status!=='cancelled'
-      )
-      .reduce(
-        (n,p)=>
-          n+Number(p.amount||0),
-        0
-      );
-
-  const legacyUnlinked=
-    pay.some(
-      p=>
-        !p.saleId&&
-        p.customerId===s.customerId&&
-        Number(p.amount||0)===Number(s.paid||0)&&
-        (p.date||'')===(s.date||'')&&
-        p.status!=='cancelled'
-    );
-
-  if(
-    Number(s.paid||0)>0&&
-    linked===0&&
-    !legacyUnlinked
-  ){
-
-    pay.push({
-      id:uid('PAY'),
-      customerId:s.customerId||null,
-      saleId:s.id,
-      amount:Number(s.paid),
-      date:s.date||today(),
-      method:s.method||'cash',
-      reference:s.reference||'',
-      status:'completed'
-    });
-  }
-});
-
-sales.forEach(s=>{
-  if(s.status!=='cancelled'){
-    syncSalePaymentFields(s);
-  }
-});
-
-save(K.sales,sales);
-save(K.pay,pay);
-
-/* =========================================================
-   NAVIGATION
-   ========================================================= */
-
-const title=$('#title');
-
-const titles={
-  home:'Your workspace',
-  business:'Business',
-  student:'Student',
-  media:'Media',
-  office:'Office',
-  personal:'Personal',
-  records:'Sales & Orders',
-  inventory:'Inventory',
-  customers:'Customers',
-  credit:'Credit & Debtors',
-  receipts:'Receipts',
-  reports:'Reports',
-  expenses:'Expenses',
-  settings:'Settings',
-  documents:'Documents',
-  tools:'AI Tools',
-  help:'Help'
-};
-
-function section(id,h,d){
-
-  if($('#'+id))return;
-
-  let m=$('main');
-
-  let s=document.createElement('section');
-
-  s.id=id;
-
-  s.className='section';
-
-  s.innerHTML=`
-    <div class="heading">
-      <h2>${h}</h2>
-      <p>${d}</p>
-    </div>
-
-    <div id="${id}-content"></div>
-  `;
-
-  m.appendChild(s);
-}
-
-section(
-  'customers',
-  'Customers',
-  'Customer profiles, purchase history and account balances.'
-);
-
-section(
-  'credit',
-  'Credit & Debtors',
-  'Credit purchases and part payments.'
-);
-
-section(
-  'receipts',
-  'Receipts',
-  'Professional receipts with seller information.'
-);
-
-section(
-  'reports',
-  'Reports',
-  'Sales, payments, expenses and stock performance.'
-);
-
-section(
-  'expenses',
-  'Expenses',
-  'Record business expenses.'
-);
-
-/*
-  Parent section used by the in-app Back button.
-*/
-
-const parentSection={
-  business:'home',
-
-  records:'business',
-  inventory:'business',
-  customers:'business',
-  credit:'business',
-  receipts:'business',
-  reports:'business',
-  expenses:'business',
-
-  settings:'home',
-  documents:'home',
-  tools:'home',
-  help:'home',
-
-  student:'home',
-  media:'home',
-  office:'home',
-  personal:'home'
-};
-
-function addBackKey(n){
-
-  const sectionEl=$('#'+n);
-
-  if(
-    !sectionEl||
-    n==='home'||
-    sectionEl.querySelector('[data-back-key]')
-  ){
-    return;
-  }
-
-  const heading=
-    $('.heading',sectionEl);
-
-  if(!heading)return;
-
-  const back=
-    document.createElement('button');
-
-  back.type='button';
-
-  back.textContent='← Back';
-
-  back.setAttribute(
-    'data-back-key',
-    '1'
-  );
-
-  back.style.cssText=
-    'border:0;background:none;color:inherit;font:inherit;font-weight:600;cursor:pointer;padding:0;margin-bottom:14px;';
-
-  back.onclick=()=>{
-    show(
-      parentSection[n]||'home'
-    );
+document.addEventListener('DOMContentLoaded', () => {
+  'use strict';
+
+  /* =========================================================
+     FREE OFIS - CONSOLIDATED APP.JS
+     ========================================================= */
+
+  const K = {
+    inv: 'freeofis_inventory',
+    cus: 'freeofis_customers',
+    sales: 'freeofis_sales',
+    pay: 'freeofis_payments',
+    biz: 'freeofis_business',
+    exp: 'freeofis_expenses'
   };
 
-  heading.prepend(back);
-}
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-function show(n){
-
-  $$('.section').forEach(
-    s=>
-      s.classList.toggle(
-        'show',
-        s.id===n
-      )
-  );
-
-  $$('[data-section]').forEach(
-    x=>
-      x.classList.toggle(
-        'active',
-        x.dataset.section===n
-      )
-  );
-
-  if(title){
-    title.textContent=
-      titles[n]||'Free Ofis';
-  }
-
-  addBackKey(n);
-
-  ({
-    business:renderBusiness,
-    records:renderSales,
-    inventory:renderInv,
-    customers:renderCus,
-    credit:renderCredit,
-    receipts:renderReceipts,
-    reports:renderReports,
-    expenses:renderExpenses,
-    settings:renderSettings
-  }[n]||(()=>{}))();
-}
-
-function wire(){
-
-  $$('[data-section]').forEach(x=>{
-
-    if(x.dataset.wired)return;
-
-    x.dataset.wired=1;
-
-    x.onclick=()=>{
-      show(x.dataset.section);
-    };
-  });
-
-  $$('.card').forEach(c=>{
-
-    if(
-      c.dataset.section||
-      c.dataset.wired
-    ){
-      return;
-    }
-
-    let t=
-      c.textContent.toLowerCase();
-
-    let m={
-      'customers':'customers',
-      'credit & debtors':'credit',
-      'receipts':'receipts',
-      'reports':'reports',
-      'sales & orders':'records',
-      'sales & records':'records',
-      'inventory':'inventory'
-    };
-
-    for(let k in m){
-
-      if(t.includes(k)){
-
-        c.dataset.wired=1;
-
-        c.dataset.section=m[k];
-
-        c.onclick=()=>{
-          show(m[k]);
-        };
-
-        break;
-      }
-    }
-  });
-}
-
-wire();
-
-/* =========================================================
-   DATA HELPERS
-   ========================================================= */
-
-const item=id=>
-  inv.find(x=>x.id===id);
-
-const customer=id=>
-  cus.find(x=>x.id===id);
-
-function customerTotal(cid){
-
-  return sales.reduce(
-    (n,s)=>
-      n+
-      (
-        s.customerId===cid&&
-        s.status!=='cancelled'
-        ?Number(s.total||0)
-        :0
-      ),
-    0
-  );
-}
-
-function customerPaid(cid){
-
-  return pay.reduce(
-    (n,p)=>
-      n+
-      (
-        p.customerId===cid&&
-        p.status!=='cancelled'
-        ?Number(p.amount||0)
-        :0
-      ),
-    0
-  );
-}
-
-function balance(cid){
-
-  return Math.max(
-    0,
-    customerTotal(cid)-
-    customerPaid(cid)
-  );
-}
-
-function salePaid(s){
-
-  const linked=
-    pay
-      .filter(
-        p=>
-          p.saleId===s.id&&
-          p.status!=='cancelled'
-      )
-      .reduce(
-        (n,p)=>
-          n+Number(p.amount||0),
-        0
+  const load = (key, fallback) => {
+    try {
+      return JSON.parse(
+        localStorage.getItem(key) || JSON.stringify(fallback)
       );
-
-  return linked>0
-    ?Math.min(
-        Number(s.total||0),
-        linked
-      )
-    :Number(s.paid||0);
-}
-
-function saleBalance(s){
-
-  return Math.max(
-    0,
-    Number(s.total||0)-
-    salePaid(s)
-  );
-}
-
-function syncSalePaymentFields(s){
-
-  s.paid=salePaid(s);
-
-  s.balance=saleBalance(s);
-
-  return s;
-}
-
-function addPay(
-  cid,
-  amt,
-  date=today(),
-  method='cash',
-  ref='',
-  saleId=null
-){
-
-  amt=Number(amt);
-
-  if(
-    !cid||
-    amt<=0||
-    amt>balance(cid)
-  ){
-    return false;
-  }
-
-  if(saleId){
-
-    const s=
-      sales.find(
-        x=>x.id===saleId
-      );
-
-    if(
-      !s||
-      s.status==='cancelled'||
-      amt>saleBalance(s)
-    ){
-      return false;
+    } catch (e) {
+      return fallback;
     }
+  };
+
+  const save = (key, value) => {
+    localStorage.setItem(key, JSON.stringify(value));
+  };
+
+  const uid = prefix =>
+    prefix +
+    '-' +
+    Date.now() +
+    '-' +
+    Math.random().toString(36).slice(2, 7);
+
+  /* =========================================================
+     DATE / TIME
+     ========================================================= */
+
+  function pad(n) {
+    return String(n).padStart(2, '0');
   }
 
-  pay.push({
-    id:uid('PAY'),
-    customerId:cid,
-    saleId,
-    amount:amt,
-    date,
-    method,
-    reference:ref,
-    status:'completed'
-  });
+  function localDateTime() {
+    const d = new Date();
 
-  save(K.pay,pay);
-
-  return true;
-}
-
-/* =========================================================
-   BUSINESS
-   ========================================================= */
-
-function renderBusiness(){
-
-  let s=$('#business');
-
-  let r=
-    $('.freeofis-biz',s);
-
-  if(!r){
-
-    r=
-      document.createElement('div');
-
-    r.className=
-      'freeofis-biz';
-
-    s.appendChild(r);
+    return (
+      d.getFullYear() +
+      '-' +
+      pad(d.getMonth() + 1) +
+      '-' +
+      pad(d.getDate()) +
+      'T' +
+      pad(d.getHours()) +
+      ':' +
+      pad(d.getMinutes()) +
+      ':' +
+      pad(d.getSeconds())
+    );
   }
 
-  r.innerHTML=`
-
-    <div class="quick">
-
-      <button
-        class="card"
-        id="bs"
-      >
-        🧾
-        <b>Sales & Orders</b>
-        <small>
-          Sell multiple products and record payments.
-        </small>
-      </button>
-
-      <button
-        class="card"
-        id="bi"
-      >
-        📦
-        <b>Inventory</b>
-        <small>
-          Products, quantities, prices and barcodes.
-        </small>
-      </button>
-
-      <button
-        class="card"
-        id="bc"
-      >
-        👥
-        <b>Customers</b>
-        <small>
-          Profiles and account balances.
-        </small>
-      </button>
-
-      <button
-        class="card"
-        id="bd"
-      >
-        💳
-        <b>Credit & Debtors</b>
-        <small>
-          Credit purchases and part payments.
-        </small>
-      </button>
-
-      <button
-        class="card"
-        id="br"
-      >
-        🧾
-        <b>Receipts</b>
-        <small>
-          Seller and customer receipts.
-        </small>
-      </button>
-
-      <button
-        class="card"
-        id="brep"
-      >
-        📊
-        <b>Reports</b>
-        <small>
-          Business performance.
-        </small>
-      </button>
-
-    </div>
-  `;
-
-  [
-    ['bs','records'],
-    ['bi','inventory'],
-    ['bc','customers'],
-    ['bd','credit'],
-    ['br','receipts'],
-    ['brep','reports']
-  ].forEach(
-    ([a,b])=>
-      $('#'+a).onclick=()=>{
-        show(b);
-      }
-  );
-}
-
-/* =========================================================
-   INVENTORY
-   ========================================================= */
-
-function renderInv(){
-
-  let s=$('#inventory');
-
-  let r=
-    $('.freeofis-inv',s);
-
-  if(!r){
-
-    r=
-      document.createElement('div');
-
-    r.className=
-      'freeofis-inv';
-
-    s.appendChild(r);
+  function today() {
+    return localDateTime().slice(0, 10);
   }
 
-  let units=
-    inv.reduce(
-      (n,x)=>
-        n+x.quantity,
-      0
+  function timeNow() {
+    return localDateTime().slice(11, 16);
+  }
+
+  function transactionTimestamp(date, time) {
+    const d = date || today();
+    const t = time || timeNow();
+
+    return `${d}T${t}:00`;
+  }
+
+  function formatDateTime(value) {
+    if (!value) return '';
+
+    const d = new Date(value);
+
+    if (Number.isNaN(d.getTime())) {
+      return String(value);
+    }
+
+    return (
+      d.toLocaleDateString('en-NG', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      }) +
+      ' ' +
+      d.toLocaleTimeString('en-NG', {
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    );
+  }
+
+  function transactionDate(value) {
+    if (!value) return today();
+
+    if (String(value).includes('T')) {
+      return String(value).slice(0, 10);
+    }
+
+    return String(value);
+  }
+
+  function transactionTime(value) {
+    if (!value) return '';
+
+    if (String(value).includes('T')) {
+      return String(value).slice(11, 16);
+    }
+
+    return '';
+  }
+
+  /* =========================================================
+     GENERAL HELPERS
+     ========================================================= */
+
+  const money = n =>
+    '₦' +
+    Number(n || 0).toLocaleString('en-NG', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    });
+
+  const esc = v =>
+    String(v ?? '').replace(
+      /[&<>'"]/g,
+      m => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&#039;',
+        '"': '&quot;'
+      })[m]
     );
 
-  let val=
-    inv.reduce(
-      (n,x)=>
-        n+
-        x.quantity*x.price,
-      0
-    );
+  const norm = v =>
+    String(v || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
 
-  r.innerHTML=`
+  let inv = load(K.inv, []);
+  let cus = load(K.cus, []);
+  let sales = load(K.sales, []);
+  let pay = load(K.pay, []);
+  let exp = load(K.exp, []);
 
-    <div class="panel">
+  let biz = load(K.biz, {
+    name: '',
+    address: '',
+    phone: '',
+    email: ''
+  });
 
-      <h3>
-        Items Remaining
-      </h3>
+  /* =========================================================
+     BASIC DATA NORMALISATION
+     ========================================================= */
 
-      <strong>
-        ${units.toLocaleString()}
-      </strong>
+  inv = Array.isArray(inv)
+    ? inv.map(x => ({
+        ...x,
+        id: x.id || uid('ITEM'),
+        name: x.name || 'Unnamed Item',
+        quantity: Number(x.quantity || 0),
+        price: Number(x.price || 0),
+        sku: x.sku || ''
+      }))
+    : [];
 
-      <h3>
-        Stock Value
-      </h3>
+  cus = Array.isArray(cus)
+    ? cus.map(x => ({
+        ...x,
+        id: x.id || uid('CUS'),
+        name: x.name || 'Unnamed Customer',
+        phone: x.phone || '',
+        address: x.address || ''
+      }))
+    : [];
 
-      <strong>
-        ${money(val)}
-      </strong>
+  sales = Array.isArray(sales) ? sales : [];
+  pay = Array.isArray(pay) ? pay : [];
+  exp = Array.isArray(exp) ? exp : [];
 
-      <br><br>
+  /* =========================================================
+     LEGACY SALES MIGRATION
+     ========================================================= */
 
-      <button
-        class="primary"
-        id="addstock"
-      >
-        + Add Inventory Item
-      </button>
+  sales = sales.map(s => {
+    if (!s || typeof s !== 'object') return null;
 
-      <div id="if"></div>
+    if (!Array.isArray(s.items)) {
+      const total = Number(s.total ?? s.amount ?? 0);
+      const q = Number(s.quantity || 0);
 
-    </div>
+      s = {
+        ...s,
+        id: s.id || uid('SALE'),
+        total,
+        paid: s.payment === 'credit' ? 0 : total,
+        balance: s.payment === 'credit' ? total : 0,
 
-    <div class="panel">
-
-      <h3>
-        Inventory
-      </h3>
-
-      <div id="il">
-
-        ${
-          inv.length
-
-          ?inv.map(x=>`
-
-            <div class="panel">
-
-              <b>
-                ${esc(x.name)}
-              </b>
-
-              <br>
-
-              Quantity:
-              ${x.quantity}
-
-              <br>
-
-              Price:
-              ${money(x.price)}
-
-              <br>
-
-              Stock value:
-              ${money(
-                x.quantity*x.price
-              )}
-
-              ${
-                x.sku
-                ?`<br>SKU/Barcode:
-                  ${esc(x.sku)}`
-                :''
+        items: q
+          ? [
+              {
+                productId: s.itemId || '',
+                name: s.itemName || s.description || 'Previous item',
+                quantity: q,
+                unitPrice: q ? total / q : total,
+                subtotal: total
               }
+            ]
+          : [],
 
-              <br>
+        customerId: s.customerId || null,
+        method: s.method || s.payment || 'cash',
+        reference: s.reference || '',
+        notes: s.notes || '',
+        status: s.status || 'completed',
+        date: s.date || today()
+      };
+    }
 
-              <button
-                data-ie="${x.id}"
-              >
-                Edit
-              </button>
+    const date = transactionDate(s.transactionAt || s.date);
+    const time =
+      transactionTime(s.transactionAt) ||
+      s.time ||
+      '00:00';
 
-              <button
-                data-id="${x.id}"
-              >
-                Delete
-              </button>
+    return {
+      ...s,
+      id: s.id || uid('SALE'),
+      date,
+      time,
+      transactionAt:
+        s.transactionAt || transactionTimestamp(date, time),
+      total: Number(s.total || 0),
+      paid: Number(s.paid || 0),
+      balance: Number(s.balance || 0),
+      customerId: s.customerId || null,
+      status: s.status || 'completed'
+    };
+  }).filter(Boolean);
 
-            </div>
+  /* =========================================================
+     PAYMENT MIGRATION
+     ========================================================= */
 
-          `).join('')
+  pay = pay
+    .filter(Boolean)
+    .map(p => {
+      const date = transactionDate(p.transactionAt || p.date);
+      const time =
+        transactionTime(p.transactionAt) ||
+        p.time ||
+        '00:00';
 
-          :'<p>No inventory items yet.</p>'
-        }
+      return {
+        ...p,
+        id: p.id || uid('PAY'),
+        customerId: p.customerId || null,
+        saleId: p.saleId || null,
+        amount: Number(p.amount || 0),
+        date,
+        time,
+        transactionAt:
+          p.transactionAt || transactionTimestamp(date, time),
+        method: p.method || 'cash',
+        reference: p.reference || '',
+        status: p.status || 'completed'
+      };
+    })
+    .filter(p => p.amount > 0);
 
+  /* =========================================================
+     REPAIR OLD SALES THAT HAD PAYMENT BUT NO PAYMENT RECORD
+     ========================================================= */
+
+  sales.forEach(s => {
+    const linked = pay
+      .filter(
+        p =>
+          p.saleId === s.id &&
+          p.status !== 'cancelled'
+      )
+      .reduce((n, p) => n + Number(p.amount || 0), 0);
+
+    const legacyUnlinked = pay.some(
+      p =>
+        !p.saleId &&
+        p.customerId === s.customerId &&
+        Number(p.amount || 0) === Number(s.paid || 0) &&
+        transactionDate(p.transactionAt || p.date) ===
+          transactionDate(s.transactionAt || s.date) &&
+        p.status !== 'cancelled'
+    );
+
+    if (
+      Number(s.paid || 0) > 0 &&
+      linked === 0 &&
+      !legacyUnlinked
+    ) {
+      pay.push({
+        id: uid('PAY'),
+        customerId: s.customerId || null,
+        saleId: s.id,
+        amount: Number(s.paid),
+        date: transactionDate(s.transactionAt || s.date),
+        time: transactionTime(s.transactionAt) || '00:00',
+        transactionAt:
+          s.transactionAt ||
+          transactionTimestamp(
+            transactionDate(s.date),
+            transactionTime(s.transactionAt) || '00:00'
+          ),
+        method: s.method || 'cash',
+        reference: s.reference || '',
+        status: 'completed'
+      });
+    }
+  });
+
+  save(K.inv, inv);
+  save(K.cus, cus);
+  save(K.sales, sales);
+  save(K.pay, pay);
+  save(K.exp, exp);
+  save(K.biz, biz);
+
+  /* =========================================================
+     TITLES
+     ========================================================= */
+
+  const title = $('#title');
+
+  const titles = {
+    home: 'Your workspace',
+    business: 'Business',
+    student: 'Student',
+    media: 'Media',
+    office: 'Office',
+    personal: 'Personal',
+    records: 'Sales & Orders',
+    inventory: 'Inventory',
+    customers: 'Customers',
+    credit: 'Credit & Debtors',
+    receipts: 'Receipts',
+    reports: 'Reports',
+    expenses: 'Expenses',
+    settings: 'Settings',
+    documents: 'Documents',
+    tools: 'AI Tools',
+    help: 'Help'
+  };
+
+  /* =========================================================
+     DYNAMIC SECTIONS
+     ========================================================= */
+
+  function section(id, heading, description) {
+    if ($('#' + id)) return;
+
+    const main = $('main');
+
+    const s = document.createElement('section');
+
+    s.id = id;
+    s.className = 'section';
+
+    s.innerHTML = `
+      <div class="heading">
+        <h2>${heading}</h2>
+        <p>${description}</p>
       </div>
 
-    </div>
-  `;
+      <div id="${id}-content"></div>
+    `;
 
-  $('#addstock').onclick=
-    ()=>invForm();
+    main.appendChild(s);
+  }
 
-  $$('[data-ie]',r).forEach(
-    b=>
-      b.onclick=()=>{
-        invForm(
-          item(b.dataset.ie)
-        );
-      }
+  section(
+    'customers',
+    'Customers',
+    'Customer profiles, purchase history and account balances.'
   );
 
-  $$('[data-id]',r).forEach(
-    b=>
-      b.onclick=()=>{
-
-        if(
-          confirm(
-            'Delete this inventory item?'
-          )
-        ){
-
-          inv=
-            inv.filter(
-              x=>x.id!==b.dataset.id
-            );
-
-          save(K.inv,inv);
-
-          renderInv();
-        }
-      }
+  section(
+    'credit',
+    'Credit & Debtors',
+    'Credit purchases and part payments.'
   );
-}
 
-function invForm(old=null){
+  section(
+    'receipts',
+    'Receipts',
+    'Professional receipts with seller information.'
+  );
 
-  let a=$('#if');
+  section(
+    'reports',
+    'Reports',
+    'Sales, payments, expenses and stock performance.'
+  );
 
-  a.innerHTML=`
+  section(
+    'expenses',
+    'Expenses',
+    'Record business expenses.'
+  );
 
-    <form id="invf">
+  /* =========================================================
+     NAVIGATION
+     ========================================================= */
 
-      <h3>
-        ${old?'Edit':'Add'} Item
-      </h3>
+  function show(id) {
+    $$('.section').forEach(s =>
+      s.classList.toggle('show', s.id === id)
+    );
 
-      <input
-        id="in"
-        placeholder="Item name"
-        required
-        value="${esc(old?.name||'')}"
-      >
+    $$('[data-section]').forEach(x =>
+      x.classList.toggle(
+        'active',
+        x.dataset.section === id
+      )
+    );
 
-      <br><br>
+    if (title) {
+      title.textContent = titles[id] || 'Free Ofis';
+    }
 
-      <input
-        id="iq"
-        type="number"
-        min="0"
-        required
-        value="${old?.quantity??0}"
-      >
-
-      <br><br>
-
-      <input
-        id="ip"
-        type="number"
-        min="0"
-        required
-        placeholder="Selling price"
-        value="${old?.price??0}"
-      >
-
-      <br><br>
-
-      <input
-        id="is"
-        placeholder="SKU / Barcode"
-        value="${esc(old?.sku||'')}"
-      >
-
-      <br><br>
-
-      <button class="primary">
-        Save Item
-      </button>
-
-    </form>
-  `;
-
-  $('#invf').onsubmit=e=>{
-
-    e.preventDefault();
-
-    let x={
-      id:
-        old?.id||
-        uid('ITEM'),
-
-      name:
-        $('#in').value.trim(),
-
-      quantity:
-        Number(
-          $('#iq').value
-        ),
-
-      price:
-        Number(
-          $('#ip').value
-        ),
-
-      sku:
-        $('#is').value.trim()
+    const renders = {
+      business: renderBusiness,
+      records: renderSales,
+      inventory: renderInv,
+      customers: renderCus,
+      credit: renderCredit,
+      receipts: renderReceipts,
+      reports: renderReports,
+      expenses: renderExpenses,
+      settings: renderSettings
     };
 
-    let i=
-      inv.findIndex(
-        z=>z.id===x.id
-      );
-
-    i<0
-      ?inv.push(x)
-      :inv[i]=x;
-
-    /*
-      Immediately consolidate the new/edited item
-      if it is genuinely identical to another item.
-    */
-
-    consolidateInventory();
-
-    save(K.inv,inv);
-    save(K.sales,sales);
-
-    renderInv();
-  };
-}
-
-/* =========================================================
-   SALES
-   ========================================================= */
-
-function renderSales(){
-
-  let s=$('#records');
-
-  let r=
-    $('.freeofis-sales',s);
-
-  if(!r){
-
-    r=
-      document.createElement('div');
-
-    r.className=
-      'freeofis-sales';
-
-    s.appendChild(r);
+    if (renders[id]) renders[id]();
   }
 
-  r.innerHTML=`
+  function wire() {
+    $$('[data-section]').forEach(x => {
+      if (x.dataset.wired) return;
 
-    <div class="panel">
+      x.dataset.wired = '1';
 
-      <button
-        class="primary"
-        id="neworder"
-      >
-        + New Sale / Order
-      </button>
-
-      <div id="of"></div>
-
-    </div>
-
-    <div class="panel">
-
-      <h3>
-        Sales & Orders
-      </h3>
-
-      <input
-        id="sq"
-        placeholder="Search order, customer or item"
-      >
-
-      <div id="sl"></div>
-
-    </div>
-  `;
-
-  $('#neworder').onclick=
-    orderForm;
-
-  $('#sq').oninput=
-    renderSaleList;
-
-  renderSaleList();
-}
-
-function orderForm(){
-
-  let a=$('#of');
-
-  a.innerHTML=`
-
-    <form id="order">
-
-      <h3>
-        New Sale / Order
-      </h3>
-
-      <label>
-        Date
-      </label>
-
-      <br>
-
-      <input
-        id="od"
-        type="date"
-        value="${today()}"
-        required
-      >
-
-      <br><br>
-
-      <label>
-        Customer
-      </label>
-
-      <br>
-
-      <select id="oc">
-
-        <option value="">
-          Walk-in Customer
-        </option>
-
-        ${
-          cus.map(c=>`
-
-            <option value="${c.id}">
-
-              ${esc(c.name)}
-
-              ${
-                balance(c.id)
-                ?' — owes '+
-                  money(balance(c.id))
-                :''
-              }
-
-            </option>
-
-          `).join('')
-        }
-
-      </select>
-
-      <div id="lines"></div>
-
-      <button
-        type="button"
-        id="aline"
-      >
-        + Add Item
-      </button>
-
-      <p>
-
-        Total:
-
-        <b id="tot">
-          ₦0
-        </b>
-
-      </p>
-
-      <label>
-        Amount paid now
-      </label>
-
-      <br>
-
-      <input
-        id="op"
-        type="number"
-        min="0"
-        value="0"
-        required
-      >
-
-      <br><br>
-
-      <select id="om">
-
-        <option>
-          cash
-        </option>
-
-        <option>
-          transfer
-        </option>
-
-        <option>
-          pos
-        </option>
-
-        <option>
-          other
-        </option>
-
-      </select>
-
-      <br><br>
-
-      <input
-        id="oref"
-        placeholder="Payment reference"
-      >
-
-      <br><br>
-
-      <textarea
-        id="on"
-        placeholder="Notes"
-      ></textarea>
-
-      <br><br>
-
-      <button class="primary">
-        Complete Sale
-      </button>
-
-    </form>
-  `;
-
-  addLine();
-
-  $('#aline').onclick=
-    addLine;
-
-  $('#order').onsubmit=
-    completeSale;
-}
-
-function addLine(){
-
-  let b=$('#lines');
-
-  let d=
-    document.createElement('div');
-
-  d.className='line';
-
-  d.innerHTML=`
-
-    <select
-      class="prod"
-      required
-    >
-
-      <option value="">
-        Select product
-      </option>
-
-      ${
-        inv.map(x=>`
-
-          <option value="${x.id}">
-
-            ${esc(x.name)}
-            —
-            ${money(x.price)}
-            —
-            Stock ${x.quantity}
-
-          </option>
-
-        `).join('')
-      }
-
-    </select>
-
-    <input
-      class="qty"
-      type="number"
-      min="1"
-      value="1"
-      style="width:70px"
-    >
-
-    <button
-      type="button"
-      class="rm"
-    >
-      Remove
-    </button>
-
-    <br><br>
-  `;
-
-  b.appendChild(d);
-
-  $('.prod',d).onchange=
-    updateTotal;
-
-  $('.qty',d).oninput=
-    updateTotal;
-
-  $('.rm',d).onclick=()=>{
-
-    d.remove();
-
-    updateTotal();
-  };
-
-  updateTotal();
-}
-
-function lines(){
-
-  let out=[];
-  let err='';
-  let requested={};
-
-  $$('.line').forEach(d=>{
-
-    let p=
-      item(
-        $('.prod',d).value
-      );
-
-    let q=
-      Number(
-        $('.qty',d).value
-      );
-
-    if(
-      !p||
-      q<1||
-      !Number.isInteger(q)
-    ){
-
-      err=
-        'Select a valid item and quantity.';
-
-      return;
-    }
-
-    requested[p.id]=
-      (requested[p.id]||0)+q;
-
-    out.push({
-
-      productId:p.id,
-
-      name:p.name,
-
-      quantity:q,
-
-      unitPrice:p.price,
-
-      subtotal:
-        q*p.price
+      x.onclick = () =>
+        show(x.dataset.section);
     });
-  });
 
-  if(!err){
+    $$('.card').forEach(card => {
+      if (card.dataset.section || card.dataset.wired)
+        return;
 
-    for(
-      const id in requested
-    ){
+      const text = card.textContent.toLowerCase();
 
-      const p=item(id);
+      const map = {
+        customers: 'customers',
+        'credit & debtors': 'credit',
+        receipts: 'receipts',
+        reports: 'reports',
+        'sales & records': 'records',
+        inventory: 'inventory'
+      };
 
-      if(
-        p&&
-        requested[id]>p.quantity
-      ){
-
-        err=
-          `${p.name}: only ${p.quantity} available.`;
-
-        break;
+      for (const key in map) {
+        if (text.includes(key)) {
+          card.dataset.wired = '1';
+          card.dataset.section = map[key];
+          card.onclick = () => show(map[key]);
+          break;
+        }
       }
-    }
+    });
   }
 
-  return{
-    out,
-    err
-  };
-}
+  wire();
 
-function updateTotal(){
+  /* =========================================================
+     DATA HELPERS
+     ========================================================= */
 
-  let z=lines();
+  const item = id =>
+    inv.find(x => x.id === id);
 
-  let t=
-    z.out.reduce(
-      (n,x)=>
-        n+x.subtotal,
+  const customer = id =>
+    cus.find(x => x.id === id);
+
+  function customerTotal(cid) {
+    return sales.reduce(
+      (n, s) =>
+        n +
+        (
+          s.customerId === cid &&
+          s.status !== 'cancelled'
+            ? Number(s.total || 0)
+            : 0
+        ),
       0
     );
-
-  if($('#tot')){
-    $('#tot').textContent=
-      money(t);
   }
 
-  if($('#op')){
-    $('#op').max=t;
-  }
-}
-
-function completeSale(e){
-
-  e.preventDefault();
-
-  let z=lines();
-
-  if(
-    z.err||
-    !z.out.length
-  ){
-
-    return alert(
-      z.err||
-      'Add at least one item.'
-    );
-  }
-
-  let total=
-    z.out.reduce(
-      (n,x)=>
-        n+x.subtotal,
+  function customerPaid(cid) {
+    return pay.reduce(
+      (n, p) =>
+        n +
+        (
+          p.customerId === cid &&
+          p.status !== 'cancelled'
+            ? Number(p.amount || 0)
+            : 0
+        ),
       0
     );
-
-  let paid=
-    Number(
-      $('#op').value||0
-    );
-
-  let cid=
-    $('#oc').value||
-    null;
-
-  let method=
-    paid
-    ?$('#om').value
-    :'credit';
-
-  let reference=
-    $('#oref').value.trim();
-
-  if(
-    !Number.isFinite(paid)||
-    paid<0
-  ){
-
-    return alert(
-      'Enter a valid payment amount.'
-    );
   }
 
-  if(paid>total){
-
-    return alert(
-      'Amount paid cannot exceed the order total.'
-    );
-  }
-
-  if(
-    total-paid>0&&
-    !cid
-  ){
-
-    return alert(
-      'Select a customer for a credit balance.'
-    );
-  }
-
-  let s={
-
-    id:
-      uid('SALE'),
-
-    date:
-      $('#od').value,
-
-    customerId:
-      cid,
-
-    items:
-      z.out,
-
-    total:
-      total,
-
-    paid:
+  function balance(cid) {
+    return Math.max(
       0,
+      customerTotal(cid) - customerPaid(cid)
+    );
+  }
 
-    balance:
-      total,
+  function salePaid(s) {
+    const linked = pay
+      .filter(
+        p =>
+          p.saleId === s.id &&
+          p.status !== 'cancelled'
+      )
+      .reduce(
+        (n, p) => n + Number(p.amount || 0),
+        0
+      );
 
-    method:
-      method,
+    return linked > 0
+      ? Math.min(Number(s.total || 0), linked)
+      : Math.min(
+          Number(s.total || 0),
+          Number(s.paid || 0)
+        );
+  }
 
-    reference:
-      reference,
+  function saleBalance(s) {
+    return Math.max(
+      0,
+      Number(s.total || 0) - salePaid(s)
+    );
+  }
 
-    notes:
-      $('#on').value.trim(),
+  function syncSalePaymentFields(s) {
+    s.paid = salePaid(s);
+    s.balance = saleBalance(s);
+    return s;
+  }
 
-    status:
-      'completed'
-  };
+  /* =========================================================
+     PAYMENT SYSTEM
+     ========================================================= */
 
   /*
-    Deduct every line from the corresponding
-    consolidated inventory record.
+     IMPORTANT:
+     Order payments are now validated against the ORDER balance,
+     not against the customer's aggregate balance.
+
+     This fixes the previous:
+     "Payment could not be recorded."
+     problem.
   */
 
-  z.out.forEach(x=>{
+  function addPay(
+    cid,
+    amount,
+    date = today(),
+    method = 'cash',
+    reference = '',
+    saleId = null,
+    time = timeNow()
+  ) {
+    const amt = Number(amount);
 
-    const p=
-      item(x.productId);
-
-    if(p){
-      p.quantity-=x.quantity;
+    if (!amt || amt <= 0) {
+      return false;
     }
-  });
 
-  sales.push(s);
+    if (saleId) {
+      const s = sales.find(x => x.id === saleId);
 
-  if(paid>0){
+      if (
+        !s ||
+        s.status === 'cancelled' ||
+        amt > saleBalance(s)
+      ) {
+        return false;
+      }
+
+      if (s.customerId !== cid) {
+        return false;
+      }
+    } else {
+      if (!cid || amt > balance(cid)) {
+        return false;
+      }
+    }
+
+    const transactionAt =
+      transactionTimestamp(date, time);
 
     pay.push({
+      id: uid('PAY'),
+      customerId: cid,
+      saleId,
+      amount: amt,
+      date,
+      time,
+      transactionAt,
+      method,
+      reference,
+      status: 'completed'
+    });
 
-      id:
-        uid('PAY'),
+    save(K.pay, pay);
 
-      customerId:
-        cid,
+    if (saleId) {
+      const s = sales.find(x => x.id === saleId);
 
-      saleId:
-        s.id,
+      if (s) {
+        syncSalePaymentFields(s);
+        save(K.sales, sales);
+      }
+    }
 
-      amount:
-        paid,
+    return true;
+  }
 
-      date:
-        s.date,
+  /* =========================================================
+     BUSINESS
+     ========================================================= */
 
-      method:
-        method,
+  function renderBusiness() {
+    const s = $('#business');
 
-      reference:
-        reference,
+    let r = $('.freeofis-biz', s);
 
-      status:
-        'completed'
+    if (!r) {
+      r = document.createElement('div');
+      r.className = 'freeofis-biz';
+      s.appendChild(r);
+    }
+
+    r.innerHTML = `
+      <div class="quick">
+
+        <button class="card" id="bs">
+          🧾
+          <b>Sales & Orders</b>
+          <small>
+            Sell multiple products and record payments.
+          </small>
+        </button>
+
+        <button class="card" id="bi">
+          📦
+          <b>Inventory</b>
+          <small>
+            Products, quantities, prices and barcodes.
+          </small>
+        </button>
+
+        <button class="card" id="bc">
+          👥
+          <b>Customers</b>
+          <small>
+            Profiles and account balances.
+          </small>
+        </button>
+
+        <button class="card" id="bd">
+          💳
+          <b>Credit & Debtors</b>
+          <small>
+            Credit purchases and part payments.
+          </small>
+        </button>
+
+        <button class="card" id="br">
+          🧾
+          <b>Receipts</b>
+          <small>
+            Seller and customer receipts.
+          </small>
+        </button>
+
+        <button class="card" id="brep">
+          📊
+          <b>Reports</b>
+          <small>
+            Business performance.
+          </small>
+        </button>
+
+      </div>
+    `;
+
+    [
+      ['bs', 'records'],
+      ['bi', 'inventory'],
+      ['bc', 'customers'],
+      ['bd', 'credit'],
+      ['br', 'receipts'],
+      ['brep', 'reports']
+    ].forEach(([a, b]) => {
+      $('#' + a).onclick = () => show(b);
     });
   }
 
-  syncSalePaymentFields(s);
+  /* =========================================================
+     INVENTORY
+     ========================================================= */
 
-  save(K.sales,sales);
-  save(K.inv,inv);
-  save(K.pay,pay);
+  function renderInv() {
+    const s = $('#inventory');
 
-  renderSales();
-  renderInv();
-  renderCredit();
+    let r = $('.freeofis-inv', s);
 
-  alert(
-`Sale recorded.
-Order: ${s.id}
-Total: ${money(total)}
-Paid: ${money(s.paid)}
-Balance: ${money(s.balance)}`
-  );
-}
+    if (!r) {
+      r = document.createElement('div');
+      r.className = 'freeofis-inv';
+      s.appendChild(r);
+    }
 
-/* =========================================================
-   SALES LIST
-   ========================================================= */
+    const units = inv.reduce(
+      (n, x) => n + Number(x.quantity || 0),
+      0
+    );
 
-function renderSaleList(){
+    const value = inv.reduce(
+      (n, x) =>
+        n +
+        Number(x.quantity || 0) *
+          Number(x.price || 0),
+      0
+    );
 
-  let q=
-    (
-      $('#sq')?.value||
-      ''
-    ).toLowerCase();
+    r.innerHTML = `
+      <div class="panel">
 
-  let r=$('#sl');
+        <h3>Items Remaining</h3>
+        <strong>${units.toLocaleString()}</strong>
 
-  if(!r)return;
+        <h3>Stock Value</h3>
+        <strong>${money(value)}</strong>
 
-  let a=
-    sales
-      .slice()
-      .reverse()
-      .filter(s=>{
+        <br><br>
 
-        let c=
-          customer(
-            s.customerId
-          )?.name||
-          'walk-in';
+        <button class="primary" id="addstock">
+          + Add Inventory Item
+        </button>
 
-        return !q||
-          s.id.toLowerCase().includes(q)||
-          c.toLowerCase().includes(q)||
-          s.items.some(
-            i=>
-              i.name
-                .toLowerCase()
-                .includes(q)
-          );
-      });
+        <div id="if"></div>
 
-  r.innerHTML=
-    a.length
-
-    ?a.map(s=>`
+      </div>
 
       <div class="panel">
 
-        <b>
-          ${esc(s.id)}
-        </b>
+        <h3>Inventory</h3>
 
-        <br>
+        <div id="il">
 
-        ${s.date}
-        —
-        ${esc(
-          customer(
-            s.customerId
-          )?.name||
-          'Walk-in Customer'
-        )}
+          ${
+            inv.length
+              ? inv
+                  .map(
+                    x => `
+                      <div class="panel">
 
-        ${
-          s.status==='cancelled'
-          ?'— CANCELLED'
-          :''
-        }
+                        <b>${esc(x.name)}</b><br>
 
-        <br>
+                        Quantity:
+                        ${Number(x.quantity || 0)}<br>
 
-        ${
-          s.items.map(
-            i=>
-              `${esc(i.name)} × ${i.quantity}`
-          ).join(', ')
-        }
+                        Price:
+                        ${money(x.price)}<br>
 
-        <br>
+                        Stock value:
+                        ${money(
+                          Number(x.quantity || 0) *
+                          Number(x.price || 0)
+                        )}
 
-        Total
-        ${money(s.total)}
+                        ${
+                          x.sku
+                            ? `<br>SKU/Barcode:
+                               ${esc(x.sku)}`
+                            : ''
+                        }
 
-        |
+                        <br>
 
-        Paid
-        ${money(salePaid(s))}
+                        <button data-ie="${x.id}">
+                          Edit
+                        </button>
 
-        |
+                        <button data-id="${x.id}">
+                          Delete
+                        </button>
 
-        Balance
-        <b>
-          ${money(saleBalance(s))}
-        </b>
+                      </div>
+                    `
+                  )
+                  .join('')
+              : '<p>No inventory items yet.</p>'
+          }
 
-        <br>
+        </div>
+      </div>
+    `;
 
-        <button
-          data-r="${s.id}"
+    $('#addstock').onclick = () => invForm();
+
+    $$('[data-ie]', r).forEach(
+      b =>
+        (b.onclick = () =>
+          invForm(item(b.dataset.ie)))
+    );
+
+    $$('[data-id]', r).forEach(
+      b =>
+        (b.onclick = () => {
+          if (
+            !confirm(
+              'Delete this inventory item?'
+            )
+          )
+            return;
+
+          inv = inv.filter(
+            x => x.id !== b.dataset.id
+          );
+
+          save(K.inv, inv);
+          renderInv();
+        })
+    );
+  }
+
+  function invForm(old = null) {
+    const a = $('#if');
+
+    a.innerHTML = `
+      <form id="invf">
+
+        <h3>
+          ${old ? 'Edit' : 'Add'} Item
+        </h3>
+
+        <input
+          id="in"
+          placeholder="Item name"
+          required
+          value="${esc(old?.name || '')}"
         >
-          Receipt
+        <br><br>
+
+        <input
+          id="iq"
+          type="number"
+          min="0"
+          required
+          placeholder="Quantity"
+          value="${old?.quantity ?? 0}"
+        >
+        <br><br>
+
+        <input
+          id="ip"
+          type="number"
+          min="0"
+          required
+          placeholder="Selling price"
+          value="${old?.price ?? 0}"
+        >
+        <br><br>
+
+        <input
+          id="is"
+          placeholder="SKU / Barcode"
+          value="${esc(old?.sku || '')}"
+        >
+        <br><br>
+
+        <button class="primary">
+          Save Item
         </button>
 
-        ${
-          saleBalance(s)
+      </form>
+    `;
 
-          ?`
-            <button
-              data-p="${s.id}"
-            >
-              Payment
-            </button>
-          `
+    $('#invf').onsubmit = e => {
+      e.preventDefault();
 
-          :''
+      const name =
+        $('#in').value.trim();
+
+      const sku =
+        $('#is').value.trim();
+
+      const quantity =
+        Number($('#iq').value);
+
+      const price =
+        Number($('#ip').value);
+
+      if (!name) {
+        return alert(
+          'Enter an item name.'
+        );
+      }
+
+      if (
+        !Number.isFinite(quantity) ||
+        quantity < 0
+      ) {
+        return alert(
+          'Enter a valid quantity.'
+        );
+      }
+
+      if (
+        !Number.isFinite(price) ||
+        price < 0
+      ) {
+        return alert(
+          'Enter a valid price.'
+        );
+      }
+
+      /*
+         When adding a NEW item, avoid creating a second
+         inventory record for the same product.
+      */
+
+      if (!old) {
+        const duplicate = inv.find(
+          x =>
+            (sku &&
+              x.sku &&
+              norm(x.sku) === norm(sku)) ||
+            (!sku &&
+              !x.sku &&
+              norm(x.name) === norm(name))
+        );
+
+        if (duplicate) {
+          duplicate.quantity += quantity;
+          duplicate.price = price;
+
+          if (sku) {
+            duplicate.sku = sku;
+          }
+
+          save(K.inv, inv);
+          renderInv();
+
+          return alert(
+            'Existing inventory item updated. Quantity has been added to its balance.'
+          );
         }
+      }
+
+      const x = {
+        id: old?.id || uid('ITEM'),
+        name,
+        quantity,
+        price,
+        sku
+      };
+
+      const i = inv.findIndex(
+        z => z.id === x.id
+      );
+
+      if (i < 0) {
+        inv.push(x);
+      } else {
+        inv[i] = x;
+      }
+
+      save(K.inv, inv);
+      renderInv();
+    };
+  }
+
+  /* =========================================================
+     SALES
+     ========================================================= */
+
+  function renderSales() {
+    const s = $('#records');
+
+    let r = $('.freeofis-sales', s);
+
+    if (!r) {
+      r = document.createElement('div');
+      r.className = 'freeofis-sales';
+      s.appendChild(r);
+    }
+
+    r.innerHTML = `
+      <div class="panel">
 
         <button
-          data-c="${s.id}"
+          class="primary"
+          id="neworder"
         >
-          Cancel
+          + New Sale / Order
         </button>
+
+        <div id="of"></div>
 
       </div>
 
-    `).join('')
+      <div class="panel">
 
-    :'<p>No sales/orders found.</p>';
+        <h3>Sales & Orders</h3>
 
-  $$('[data-r]',r).forEach(
-    b=>
-      b.onclick=()=>{
-        receipt(b.dataset.r);
-      }
-  );
+        <input
+          id="sq"
+          placeholder="Search customer, order or item"
+        >
 
-  $$('[data-p]',r).forEach(
-    b=>
-      b.onclick=()=>{
-        salePay(b.dataset.p);
-      }
-  );
+        <div id="sl"></div>
 
-  $$('[data-c]',r).forEach(
-    b=>
-      b.onclick=()=>{
-        cancelSale(b.dataset.c);
-      }
-  );
-}
+      </div>
+    `;
 
-/* =========================================================
-   SALE PAYMENT
-   ========================================================= */
+    $('#neworder').onclick = orderForm;
 
-function salePay(id){
+    $('#sq').oninput = renderSaleList;
 
-  let s=
-    sales.find(
-      x=>x.id===id
-    );
-
-  if(
-    !s||
-    s.status==='cancelled'
-  ){
-    return;
+    renderSaleList();
   }
 
-  const current=
-    saleBalance(s);
+  function orderForm() {
+    const a = $('#of');
 
-  if(current<=0){
+    a.innerHTML = `
+      <form id="order">
 
-    return alert(
-      'This order is already fully paid.'
-    );
+        <h3>New Sale / Order</h3>
+
+        <label>Date</label><br>
+
+        <input
+          id="od"
+          type="date"
+          value="${today()}"
+          required
+        >
+
+        <br><br>
+
+        <label>Time</label><br>
+
+        <input
+          id="ot"
+          type="time"
+          value="${timeNow()}"
+          required
+        >
+
+        <br><br>
+
+        <label>Customer</label><br>
+
+        <select id="oc">
+
+          <option value="">
+            Walk-in Customer
+          </option>
+
+          ${cus
+            .map(
+              c => `
+                <option value="${c.id}">
+                  ${esc(c.name)}
+                  ${
+                    balance(c.id)
+                      ? ' — owes ' +
+                        money(balance(c.id))
+                      : ''
+                  }
+                </option>
+              `
+            )
+            .join('')}
+
+        </select>
+
+        <br><br>
+
+        <div id="lines"></div>
+
+        <button
+          type="button"
+          id="aline"
+        >
+          + Add Item
+        </button>
+
+        <p>
+          Total:
+          <b id="tot">₦0</b>
+        </p>
+
+        <label>
+          Amount paid now
+        </label>
+
+        <br>
+
+        <input
+          id="op"
+          type="number"
+          min="0"
+          value="0"
+          required
+        >
+
+        <br><br>
+
+        <select id="om">
+
+          <option>cash</option>
+          <option>transfer</option>
+          <option>pos</option>
+          <option>other</option>
+
+        </select>
+
+        <br><br>
+
+        <input
+          id="oref"
+          placeholder="Payment reference"
+        >
+
+        <br><br>
+
+        <textarea
+          id="on"
+          placeholder="Notes"
+        ></textarea>
+
+        <br><br>
+
+        <button class="primary">
+          Complete Sale
+        </button>
+
+      </form>
+    `;
+
+    addLine();
+
+    $('#aline').onclick = addLine;
+
+    $('#order').onsubmit =
+      completeSale;
   }
 
-  let a=
-    Number(
-      prompt(
-`Order ${s.id}
-Current balance: ${money(current)}
-Payment amount:`
-      )
-    );
+  function addLine() {
+    const b = $('#lines');
 
-  if(
-    !Number.isFinite(a)||
-    a<=0||
-    a>current
-  ){
+    const d =
+      document.createElement('div');
 
-    return alert(
-      'Invalid payment.'
-    );
-  }
+    d.className = 'line';
 
-  let method=
-    prompt(
-      'Payment method: cash, transfer, pos or other',
-      'cash'
-    );
+    d.innerHTML = `
+      <select
+        class="prod"
+        required
+      >
 
-  if(method===null)return;
+        <option value="">
+          Select product
+        </option>
 
-  method=
-    method.trim().toLowerCase()||
-    'cash';
+        ${inv
+          .map(
+            x => `
+              <option value="${x.id}">
+                ${esc(x.name)}
+                —
+                ${money(x.price)}
+                —
+                Stock ${x.quantity}
+              </option>
+            `
+          )
+          .join('')}
 
-  if(
-    ![
-      'cash',
-      'transfer',
-      'pos',
-      'other'
-    ].includes(method)
-  ){
+      </select>
 
-    return alert(
-      'Invalid payment method.'
-    );
-  }
-
-  let ref=
-    prompt(
-      'Payment reference (optional):',
-      ''
-    );
-
-  if(ref===null){
-    ref='';
-  }
-
-  if(
-    !addPay(
-      s.customerId,
-      a,
-      today(),
-      method,
-      ref,
-      s.id
-    )
-  ){
-
-    return alert(
-      'Payment could not be recorded.'
-    );
-  }
-
-  syncSalePaymentFields(s);
-
-  save(K.sales,sales);
-
-  renderSales();
-  renderCredit();
-  renderCus();
-  renderReports();
-
-  alert(
-    `Payment recorded. Remaining: ${money(s.balance)}`
-  );
-}
-
-/* =========================================================
-   CANCEL SALE
-   ========================================================= */
-
-function cancelSale(id){
-
-  let s=
-    sales.find(
-      x=>x.id===id
-    );
-
-  if(
-    !s||
-    s.status==='cancelled'
-  ){
-    return;
-  }
-
-  if(
-    !confirm(
-      'Cancel this order and restore its stock?'
-    )
-  ){
-    return;
-  }
-
-  s.status='cancelled';
-
-  pay
-    .filter(
-      p=>
-        p.saleId===s.id&&
-        p.status!=='cancelled'
-    )
-    .forEach(
-      p=>
-        p.status='cancelled'
-    );
-
-  /*
-    Restore every item in the cancelled
-    multi-item transaction.
-  */
-
-  s.items.forEach(i=>{
-
-    let p=
-      item(i.productId);
-
-    if(p){
-      p.quantity+=i.quantity;
-    }
-  });
-
-  save(K.sales,sales);
-  save(K.inv,inv);
-  save(K.pay,pay);
-
-  renderSales();
-  renderInv();
-  renderCredit();
-  renderCus();
-  renderReports();
-}
-
-/* =========================================================
-   CUSTOMERS
-   ========================================================= */
-
-function renderCus(){
-
-  let r=
-    $('#customers-content');
-
-  r.innerHTML=`
-
-    <div class="panel">
+      <input
+        class="qty"
+        type="number"
+        min="1"
+        value="1"
+        style="width:70px"
+      >
 
       <button
-        class="primary"
-        id="nc"
+        type="button"
+        class="rm"
       >
-        + Add Customer
+        Remove
       </button>
 
-      <div id="cf"></div>
-
-      <input
-        id="cq"
-        placeholder="Search customer"
-      >
-
-      <div id="cl"></div>
-
-    </div>
-  `;
-
-  $('#nc').onclick=
-    ()=>cusForm();
-
-  $('#cq').oninput=
-    renderCusList;
-
-  renderCusList();
-}
-
-function cusForm(old=null){
-
-  let a=$('#cf');
-
-  a.innerHTML=`
-
-    <form id="cusf">
-
-      <h3>
-        ${old?'Edit':'Add'} Customer
-      </h3>
-
-      <input
-        id="cn"
-        placeholder="Customer name"
-        required
-        value="${esc(old?.name||'')}"
-      >
-
       <br><br>
+    `;
 
-      <input
-        id="cp"
-        placeholder="Phone"
-        value="${esc(old?.phone||'')}"
-      >
+    b.appendChild(d);
 
-      <br><br>
+    $('.prod', d).onchange =
+      updateTotal;
 
-      <input
-        id="ca"
-        placeholder="Address"
-        value="${esc(old?.address||'')}"
-      >
+    $('.qty', d).oninput =
+      updateTotal;
 
-      <br><br>
-
-      <button class="primary">
-        Save Customer
-      </button>
-
-    </form>
-  `;
-
-  $('#cusf').onsubmit=e=>{
-
-    e.preventDefault();
-
-    let x={
-
-      id:
-        old?.id||
-        uid('CUS'),
-
-      name:
-        $('#cn').value.trim(),
-
-      phone:
-        $('#cp').value.trim(),
-
-      address:
-        $('#ca').value.trim()
+    $('.rm', d).onclick = () => {
+      d.remove();
+      updateTotal();
     };
 
-    let i=
-      cus.findIndex(
-        z=>z.id===x.id
+    updateTotal();
+  }
+
+  function lines() {
+    const out = [];
+    let err = '';
+    const requested = {};
+
+    $$('.line').forEach(d => {
+      const p =
+        item($('.prod', d).value);
+
+      const q =
+        Number($('.qty', d).value);
+
+      if (
+        !p ||
+        q < 1 ||
+        !Number.isInteger(q)
+      ) {
+        err =
+          'Select a valid item and quantity.';
+        return;
+      }
+
+      requested[p.id] =
+        (requested[p.id] || 0) + q;
+
+      out.push({
+        productId: p.id,
+        name: p.name,
+        quantity: q,
+        unitPrice: Number(p.price),
+        subtotal:
+          q * Number(p.price)
+      });
+    });
+
+    if (!err) {
+      for (const id in requested) {
+        const p = item(id);
+
+        if (
+          p &&
+          requested[id] > p.quantity
+        ) {
+          err =
+            `${p.name}: only ${p.quantity} available.`;
+          break;
+        }
+      }
+    }
+
+    return {
+      out,
+      err
+    };
+  }
+
+  function updateTotal() {
+    const z = lines();
+
+    const total =
+      z.out.reduce(
+        (n, x) =>
+          n + Number(x.subtotal || 0),
+        0
       );
 
-    i<0
-      ?cus.push(x)
-      :cus[i]=x;
+    if ($('#tot')) {
+      $('#tot').textContent =
+        money(total);
+    }
 
-    save(K.cus,cus);
+    if ($('#op')) {
+      $('#op').max = total;
+    }
+  }
 
+  function completeSale(e) {
+    e.preventDefault();
+
+    const z = lines();
+
+    if (z.err || !z.out.length) {
+      return alert(
+        z.err ||
+          'Add at least one item.'
+      );
+    }
+
+    const total =
+      z.out.reduce(
+        (n, x) =>
+          n + Number(x.subtotal || 0),
+        0
+      );
+
+    const paid =
+      Number($('#op').value || 0);
+
+    const cid =
+      $('#oc').value || null;
+
+    const date =
+      $('#od').value || today();
+
+    const time =
+      $('#ot').value || timeNow();
+
+    const method =
+      paid
+        ? $('#om').value
+        : 'credit';
+
+    const reference =
+      $('#oref').value.trim();
+
+    if (
+      !Number.isFinite(paid) ||
+      paid < 0
+    ) {
+      return alert(
+        'Enter a valid payment amount.'
+      );
+    }
+
+    if (paid > total) {
+      return alert(
+        'Amount paid cannot exceed the order total.'
+      );
+    }
+
+    if (
+      total - paid > 0 &&
+      !cid
+    ) {
+      return alert(
+        'Select a customer for a credit balance.'
+      );
+    }
+
+    const transactionAt =
+      transactionTimestamp(
+        date,
+        time
+      );
+
+    const s = {
+      id: uid('SALE'),
+      date,
+      time,
+      transactionAt,
+      customerId: cid,
+      items: z.out,
+      total,
+      paid: 0,
+      balance: total,
+      method,
+      reference,
+      notes:
+        $('#on').value.trim(),
+      status: 'completed'
+    };
+
+    /* Reduce inventory */
+    z.out.forEach(x => {
+      const p =
+        item(x.productId);
+
+      if (p) {
+        p.quantity -= x.quantity;
+      }
+    });
+
+    sales.push(s);
+
+    /*
+       Create the initial payment as a proper payment
+       transaction. This keeps sales, payments and statements
+       using the same source of truth.
+    */
+
+    if (paid > 0) {
+      pay.push({
+        id: uid('PAY'),
+        customerId: cid,
+        saleId: s.id,
+        amount: paid,
+        date,
+        time,
+        transactionAt,
+        method,
+        reference,
+        status: 'completed'
+      });
+    }
+
+    syncSalePaymentFields(s);
+
+    save(K.sales, sales);
+    save(K.inv, inv);
+    save(K.pay, pay);
+
+    renderSales();
+    renderInv();
+    renderCredit();
     renderCus();
-  };
-}
+    renderReports();
 
-function renderCusList(){
+    alert(
+      `Sale recorded.
 
-  let r=$('#cl');
+Order: ${s.id}
+Date: ${formatDateTime(s.transactionAt)}
+Total: ${money(total)}
+Paid: ${money(s.paid)}
+Balance: ${money(s.balance)}`
+    );
+  }
 
-  let q=
-    (
-      $('#cq')?.value||
-      ''
-    ).toLowerCase();
+  /* =========================================================
+     SALES LIST
+     CUSTOMER-FIRST VIEW
+     ========================================================= */
 
-  r.innerHTML=
-    cus
+  function renderSaleList() {
+    const r = $('#sl');
+
+    if (!r) return;
+
+    const q =
+      ($('#sq')?.value || '')
+        .trim()
+        .toLowerCase();
+
+    let list = sales
       .filter(
-        c=>
-          c.name
-            .toLowerCase()
-            .includes(q)||
-          (c.phone||'')
-            .includes(q)
+        s =>
+          s.status !== 'cancelled'
       )
-      .map(c=>`
-
-        <div class="panel">
-
-          <b>
-            ${esc(c.name)}
-          </b>
-
-          <br>
-
-          ${esc(c.phone||'')}
-
-          <br>
-
-          Outstanding:
-
-          <b>
-            ${money(balance(c.id))}
-          </b>
-
-          <br>
-
-          <button
-            data-st="${c.id}"
-          >
-            Statement
-          </button>
-
-          <button
-            data-pp="${c.id}"
-          >
-            Record Payment
-          </button>
-
-        </div>
-
-      `).join('')
-
-    ||'<p>No customers found.</p>';
-
-  $$('[data-st]',r).forEach(
-    b=>
-      b.onclick=()=>{
-        statement(b.dataset.st);
-      }
-  );
-
-  $$('[data-pp]',r).forEach(
-    b=>
-      b.onclick=()=>{
-        customerPay(b.dataset.pp);
-      }
-  );
-}
-
-/* =========================================================
-   CUSTOMER PAYMENT
-   ========================================================= */
-
-function customerPay(cid){
-
-  let c=
-    customer(cid);
-
-  if(!c)return;
-
-  const outstanding=
-    balance(cid);
-
-  if(outstanding<=0){
-
-    return alert(
-      'This customer has no outstanding balance.'
-    );
-  }
-
-  let a=
-    Number(
-      prompt(
-`${c.name}
-Outstanding: ${money(outstanding)}
-Payment amount:`
-      )
-    );
-
-  if(
-    !Number.isFinite(a)||
-    a<=0||
-    a>outstanding
-  ){
-
-    return alert(
-      'Invalid payment.'
-    );
-  }
-
-  let method=
-    prompt(
-      'Payment method: cash, transfer, pos or other',
-      'cash'
-    );
-
-  if(method===null)return;
-
-  method=
-    method.trim().toLowerCase()||
-    'cash';
-
-  if(
-    ![
-      'cash',
-      'transfer',
-      'pos',
-      'other'
-    ].includes(method)
-  ){
-
-    return alert(
-      'Invalid payment method.'
-    );
-  }
-
-  let ref=
-    prompt(
-      'Payment reference (optional):',
-      ''
-    );
-
-  if(ref===null){
-    ref='';
-  }
-
-  /*
-    Allocate a customer-level payment against
-    the oldest unpaid sales.
-
-    IMPORTANT:
-    We first calculate ALL allocations.
-    Nothing is changed until we know the entire
-    payment can be allocated.
-  */
-
-  let remaining=a;
-
-  const openSales=
-    sales
-      .filter(
-        s=>
-          s.customerId===cid&&
-          s.status!=='cancelled'&&
-          saleBalance(s)>0
-      )
+      .slice()
       .sort(
-        (x,y)=>
-          String(x.date)
-            .localeCompare(
-              String(y.date)
+        (a, b) =>
+          String(
+            b.transactionAt ||
+              b.date
+          ).localeCompare(
+            String(
+              a.transactionAt ||
+                a.date
             )
+          )
       );
 
-  const available=
-    openSales.reduce(
-      (n,s)=>
-        n+saleBalance(s),
-      0
+    /*
+       Group sales by customer.
+
+       This prevents the Sales & Orders page from becoming a
+       long rough list containing many repeated customer names.
+    */
+
+    const groups = {};
+
+    list.forEach(s => {
+      const cid =
+        s.customerId || '__walkin__';
+
+      if (!groups[cid]) {
+        groups[cid] = [];
+      }
+
+      groups[cid].push(s);
+    });
+
+    let entries = Object.entries(
+      groups
     );
 
-  if(a>available){
+    if (q) {
+      entries = entries.filter(
+        ([cid, arr]) => {
+          const c =
+            customer(cid);
 
-    return alert(
-      'Payment could not be fully allocated.'
-    );
-  }
+          const customerName =
+            c?.name ||
+            'Walk-in Customer';
 
-  const allocations=[];
+          return (
+            customerName
+              .toLowerCase()
+              .includes(q) ||
+            arr.some(
+              s =>
+                s.id
+                  .toLowerCase()
+                  .includes(q) ||
+                s.items.some(i =>
+                  i.name
+                    .toLowerCase()
+                    .includes(q)
+                )
+            )
+          );
+        }
+      );
+    }
 
-  openSales.forEach(s=>{
+    if (!entries.length) {
+      r.innerHTML =
+        '<p>No customers/orders found.</p>';
 
-    if(remaining<=0){
       return;
     }
 
-    const portion=
-      Math.min(
-        remaining,
-        saleBalance(s)
-      );
+    r.innerHTML = entries
+      .map(([cid, arr]) => {
+        const c =
+          customer(cid);
 
-    if(portion>0){
+        const name =
+          c?.name ||
+          'Walk-in Customer';
 
-      allocations.push({
-        sale:s,
-        amount:portion
-      });
+        const total =
+          arr.reduce(
+            (n, s) =>
+              n + Number(s.total || 0),
+            0
+          );
 
-      remaining-=portion;
-    }
-  });
+        const outstanding =
+          c
+            ? balance(cid)
+            : arr.reduce(
+                (n, s) =>
+                  n +
+                  saleBalance(s),
+                0
+              );
 
-  if(remaining>0){
+        return `
+          <div class="panel">
 
-    return alert(
-      'Payment could not be fully allocated.'
+            <h3>
+              <button
+                type="button"
+                data-customer="${esc(cid)}"
+                style="
+                  background:none;
+                  border:0;
+                  padding:0;
+                  font-size:inherit;
+                  font-weight:bold;
+                  cursor:pointer;
+                  text-align:left;
+                "
+              >
+                ${esc(name)}
+              </button>
+            </h3>
+
+            <p>
+              Orders:
+              <b>${arr.length}</b>
+            </p>
+
+            <p>
+              Total purchases:
+              <b>${money(total)}</b>
+            </p>
+
+            <p>
+              Outstanding:
+              <b>${money(outstanding)}</b>
+            </p>
+
+            <button
+              data-customer="${esc(cid)}"
+            >
+              Open Customer
+            </button>
+
+            <button
+              data-statement="${esc(cid)}"
+            >
+              Statement
+            </button>
+
+            ${
+              outstanding > 0
+                ? `
+                  <button
+                    data-payment="${esc(cid)}"
+                  >
+                    Record Payment
+                  </button>
+                `
+                : ''
+            }
+
+            <hr>
+
+            ${arr
+              .map(
+                s => `
+                  <div
+                    style="
+                      padding:8px 0;
+                      border-bottom:1px solid #ddd;
+                    "
+                  >
+
+                    <b>${esc(s.id)}</b><br>
+
+                    ${formatDateTime(
+                      s.transactionAt ||
+                        s.date
+                    )}<br>
+
+                    ${s.items
+                      .map(
+                        i =>
+                          `${esc(
+                            i.name
+                          )} × ${
+                            i.quantity
+                          }`
+                      )
+                      .join(', ')}
+
+                    <br>
+
+                    Total:
+                    ${money(s.total)}
+                    |
+                    Paid:
+                    ${money(
+                      salePaid(s)
+                    )}
+                    |
+                    Balance:
+                    <b>
+                      ${money(
+                        saleBalance(s)
+                      )}
+                    </b>
+
+                    <br>
+
+                    <button
+                      data-r="${esc(s.id)}"
+                    >
+                      Receipt
+                    </button>
+
+                    ${
+                      saleBalance(s)
+                        ? `
+                          <button
+                            data-p="${esc(
+                              s.id
+                            )}"
+                          >
+                            Payment
+                          </button>
+                        `
+                        : ''
+                    }
+
+                    <button
+                      data-c="${esc(s.id)}"
+                    >
+                      Cancel
+                    </button>
+
+                  </div>
+                `
+              )
+              .join('')}
+
+          </div>
+        `;
+      })
+      .join('');
+
+    $$('[data-customer]', r).forEach(
+      b => {
+        b.onclick = () =>
+          customerPage(
+            b.dataset.customer
+          );
+      }
+    );
+
+    $$('[data-statement]', r).forEach(
+      b => {
+        b.onclick = () =>
+          statement(
+            b.dataset.statement
+          );
+      }
+    );
+
+    $$('[data-payment]', r).forEach(
+      b => {
+        b.onclick = () =>
+          customerPay(
+            b.dataset.payment
+          );
+      }
+    );
+
+    $$('[data-r]', r).forEach(
+      b => {
+        b.onclick = () =>
+          receipt(b.dataset.r);
+      }
+    );
+
+    $$('[data-p]', r).forEach(
+      b => {
+        b.onclick = () =>
+          salePay(b.dataset.p);
+      }
+    );
+
+    $$('[data-c]', r).forEach(
+      b => {
+        b.onclick = () =>
+          cancelSale(b.dataset.c);
+      }
     );
   }
 
-  /*
-    Only now do we mutate payment/sale records.
-  */
+  /* =========================================================
+     ORDER PAYMENT
+     ========================================================= */
 
-  allocations.forEach(
-    ({sale,amount})=>{
+  function salePay(id) {
+    const s =
+      sales.find(x => x.id === id);
 
-      pay.push({
+    if (
+      !s ||
+      s.status === 'cancelled'
+    ) {
+      return;
+    }
 
-        id:
-          uid('PAY'),
+    const current =
+      saleBalance(s);
 
-        customerId:
-          cid,
-
-        saleId:
-          sale.id,
-
-        amount:
-          amount,
-
-        date:
-          today(),
-
-        method:
-          method,
-
-        reference:
-          ref,
-
-        status:
-          'completed'
-      });
-
-      syncSalePaymentFields(
-        sale
+    if (current <= 0) {
+      return alert(
+        'This order is already fully paid.'
       );
     }
-  );
 
-  save(K.pay,pay);
-  save(K.sales,sales);
+    const amount = Number(
+      prompt(
+        `Order ${s.id}
 
-  renderCus();
-  renderCredit();
-  renderSales();
-  renderReports();
+Current balance: ${money(current)}
 
-  alert(
-    `Payment recorded. Remaining customer balance: ${money(balance(cid))}`
-  );
-}
-
-/* =========================================================
-   CUSTOMER STATEMENT
-   ========================================================= */
-
-function statement(cid){
-
-  let c=
-    customer(cid);
-
-  let rows=[];
-
-  let run=0;
-
-  sales
-    .filter(
-      s=>
-        s.customerId===cid&&
-        s.status!=='cancelled'
-    )
-    .forEach(
-      s=>
-        rows.push({
-
-          date:s.date,
-
-          type:'Purchase',
-
-          d:s.total,
-
-          c:0
-        })
-    );
-
-  pay
-    .filter(
-      p=>
-        p.customerId===cid&&
-        p.status!=='cancelled'
-    )
-    .forEach(
-      p=>
-        rows.push({
-
-          date:p.date,
-
-          type:'Payment',
-
-          d:0,
-
-          c:p.amount
-        })
-    );
-
-  rows.sort(
-    (a,b)=>
-      a.date.localeCompare(
-        b.date
+Payment amount:`
       )
-  );
+    );
 
-  modal(`
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      amount > current
+    ) {
+      return alert(
+        'Invalid payment.'
+      );
+    }
 
-    <h2>
-      ${esc(c.name)} — Statement
-    </h2>
+    let method = prompt(
+      'Payment method: cash, transfer, pos or other',
+      'cash'
+    );
 
-    <p>
-      Outstanding:
-      <b>
-        ${money(balance(cid))}
-      </b>
-    </p>
+    if (method === null) return;
 
-    <table
-      style="width:100%"
-    >
+    method =
+      method.trim().toLowerCase() ||
+      'cash';
 
-      <tr>
-        <th>Date</th>
-        <th>Type</th>
-        <th>Debit</th>
-        <th>Credit</th>
-        <th>Balance</th>
-      </tr>
+    if (
+      ![
+        'cash',
+        'transfer',
+        'pos',
+        'other'
+      ].includes(method)
+    ) {
+      return alert(
+        'Invalid payment method.'
+      );
+    }
+
+    let reference = prompt(
+      'Payment reference (optional):',
+      ''
+    );
+
+    if (reference === null) {
+      reference = '';
+    }
+
+    const date = today();
+    const time = timeNow();
+
+    /*
+       FIX:
+       addPay validates against this specific order,
+       not the customer's aggregate balance.
+    */
+
+    if (
+      !addPay(
+        s.customerId,
+        amount,
+        date,
+        method,
+        reference,
+        s.id,
+        time
+      )
+    ) {
+      return alert(
+        'Payment could not be recorded.'
+      );
+    }
+
+    syncSalePaymentFields(s);
+
+    save(K.sales, sales);
+
+    renderSales();
+    renderCredit();
+    renderCus();
+    renderReports();
+
+    alert(
+      `Payment recorded.
+
+Date: ${formatDateTime(
+        s.transactionAt
+      )}
+
+Remaining:
+${money(saleBalance(s))}`
+    );
+  }
+
+  /* =========================================================
+     CANCEL SALE
+     ========================================================= */
+
+  function cancelSale(id) {
+    const s =
+      sales.find(x => x.id === id);
+
+    if (
+      !s ||
+      s.status === 'cancelled'
+    ) {
+      return;
+    }
+
+    if (
+      !confirm(
+        'Cancel this order and restore its stock?'
+      )
+    ) {
+      return;
+    }
+
+    s.status = 'cancelled';
+
+    pay
+      .filter(
+        p =>
+          p.saleId === s.id &&
+          p.status !== 'cancelled'
+      )
+      .forEach(
+        p =>
+          (p.status = 'cancelled')
+      );
+
+    s.items.forEach(i => {
+      const p =
+        item(i.productId);
+
+      if (p) {
+        p.quantity +=
+          Number(i.quantity || 0);
+      }
+    });
+
+    save(K.sales, sales);
+    save(K.inv, inv);
+    save(K.pay, pay);
+
+    renderSales();
+    renderInv();
+    renderCredit();
+    renderCus();
+    renderReports();
+  }
+
+  /* =========================================================
+     CUSTOMERS
+     ========================================================= */
+
+  function renderCus() {
+    const r =
+      $('#customers-content');
+
+    r.innerHTML = `
+      <div class="panel">
+
+        <button
+          class="primary"
+          id="nc"
+        >
+          + Add Customer
+        </button>
+
+        <div id="cf"></div>
+
+        <input
+          id="cq"
+          placeholder="Search customer"
+        >
+
+        <div id="cl"></div>
+
+      </div>
+    `;
+
+    $('#nc').onclick =
+      () => cusForm();
+
+    $('#cq').oninput =
+      renderCusList;
+
+    renderCusList();
+  }
+
+  function cusForm(old = null) {
+    const a = $('#cf');
+
+    a.innerHTML = `
+      <form id="cusf">
+
+        <h3>
+          ${old ? 'Edit' : 'Add'}
+          Customer
+        </h3>
+
+        <input
+          id="cn"
+          placeholder="Customer name"
+          required
+          value="${esc(
+            old?.name || ''
+          )}"
+        >
+
+        <br><br>
+
+        <input
+          id="cp"
+          placeholder="Phone"
+          value="${esc(
+            old?.phone || ''
+          )}"
+        >
+
+        <br><br>
+
+        <input
+          id="ca"
+          placeholder="Address"
+          value="${esc(
+            old?.address || ''
+          )}"
+        >
+
+        <br><br>
+
+        <button class="primary">
+          Save Customer
+        </button>
+
+      </form>
+    `;
+
+    $('#cusf').onsubmit = e => {
+      e.preventDefault();
+
+      const x = {
+        id:
+          old?.id ||
+          uid('CUS'),
+
+        name:
+          $('#cn').value.trim(),
+
+        phone:
+          $('#cp').value.trim(),
+
+        address:
+          $('#ca').value.trim()
+      };
+
+      if (!x.name) {
+        return alert(
+          'Enter the customer name.'
+        );
+      }
+
+      const i =
+        cus.findIndex(
+          z => z.id === x.id
+        );
+
+      if (i < 0) {
+        cus.push(x);
+      } else {
+        cus[i] = x;
+      }
+
+      save(K.cus, cus);
+
+      renderCus();
+    };
+  }
+
+  function renderCusList() {
+    const r = $('#cl');
+
+    const q =
+      ($('#cq')?.value || '')
+        .toLowerCase()
+        .trim();
+
+    const filtered =
+      cus.filter(
+        c =>
+          norm(c.name).includes(q) ||
+          norm(c.phone).includes(q)
+      );
+
+    r.innerHTML =
+      filtered.length
+        ? filtered
+            .map(
+              c => `
+                <div class="panel">
+
+                  <button
+                    data-customer="${c.id}"
+                    style="
+                      background:none;
+                      border:0;
+                      padding:0;
+                      font-weight:bold;
+                      font-size:18px;
+                      cursor:pointer;
+                    "
+                  >
+                    ${esc(c.name)}
+                  </button>
+
+                  <br>
+
+                  ${esc(c.phone || '')}
+
+                  <br>
+
+                  Outstanding:
+                  <b>
+                    ${money(
+                      balance(c.id)
+                    )}
+                  </b>
+
+                  <br><br>
+
+                  <button
+                    data-st="${c.id}"
+                  >
+                    Statement
+                  </button>
+
+                  ${
+                    balance(c.id) > 0
+                      ? `
+                        <button
+                          data-pp="${c.id}"
+                        >
+                          Record Payment
+                        </button>
+                      `
+                      : ''
+                  }
+
+                </div>
+              `
+            )
+            .join('')
+        : '<p>No customers found.</p>';
+
+    $$('[data-customer]', r).forEach(
+      b =>
+        (b.onclick = () =>
+          customerPage(
+            b.dataset.customer
+          ))
+    );
+
+    $$('[data-st]', r).forEach(
+      b =>
+        (b.onclick = () =>
+          statement(
+            b.dataset.st
+          ))
+    );
+
+    $$('[data-pp]', r).forEach(
+      b =>
+        (b.onclick = () =>
+          customerPay(
+            b.dataset.pp
+          ))
+    );
+  }
+
+  /* =========================================================
+     CUSTOMER PAGE
+     ========================================================= */
+
+  function customerPage(cid) {
+    const c =
+      customer(cid);
+
+    if (!c) {
+      return alert(
+        'Customer not found.'
+      );
+    }
+
+    const customerSales =
+      sales
+        .filter(
+          s =>
+            s.customerId === cid &&
+            s.status !== 'cancelled'
+        )
+        .sort(
+          (a, b) =>
+            String(
+              b.transactionAt ||
+                b.date
+            ).localeCompare(
+              String(
+                a.transactionAt ||
+                  a.date
+              )
+            )
+        );
+
+    const customerPayments =
+      pay
+        .filter(
+          p =>
+            p.customerId === cid &&
+            p.status !== 'cancelled'
+        )
+        .sort(
+          (a, b) =>
+            String(
+              b.transactionAt ||
+                b.date
+            ).localeCompare(
+              String(
+                a.transactionAt ||
+                  a.date
+              )
+            )
+        );
+
+    modal(`
+      <h2>${esc(c.name)}</h2>
+
+      <p>
+        Phone:
+        ${esc(c.phone || 'Not provided')}
+      </p>
+
+      <p>
+        Address:
+        ${esc(
+          c.address || 'Not provided'
+        )}
+      </p>
+
+      <hr>
+
+      <p>
+        Total purchases:
+        <b>
+          ${money(
+            customerTotal(cid)
+          )}
+        </b>
+      </p>
+
+      <p>
+        Total payments:
+        <b>
+          ${money(
+            customerPaid(cid)
+          )}
+        </b>
+      </p>
+
+      <p>
+        Outstanding:
+        <b>
+          ${money(
+            balance(cid)
+          )}
+        </b>
+      </p>
+
+      <button
+        id="cpay"
+        ${balance(cid) <= 0 ? 'disabled' : ''}
+      >
+        Record Payment
+      </button>
+
+      <button id="cstatement">
+        Full Statement
+      </button>
+
+      <h3>Purchase History</h3>
 
       ${
-        rows
-          .map(x=>{
+        customerSales.length
+          ? customerSales
+              .map(
+                s => `
+                  <div
+                    style="
+                      padding:10px 0;
+                      border-bottom:1px solid #ddd;
+                    "
+                  >
 
-            run+=
-              x.d-x.c;
+                    <b>${esc(s.id)}</b><br>
 
-            return`
+                    ${formatDateTime(
+                      s.transactionAt ||
+                        s.date
+                    )}
 
+                    <br>
+
+                    ${s.items
+                      .map(
+                        i =>
+                          `${esc(
+                            i.name
+                          )} × ${
+                            i.quantity
+                          }`
+                      )
+                      .join(', ')}
+
+                    <br>
+
+                    Total:
+                    ${money(s.total)}
+
+                    <br>
+
+                    Paid:
+                    ${money(
+                      salePaid(s)
+                    )}
+
+                    <br>
+
+                    Balance:
+                    ${money(
+                      saleBalance(s)
+                    )}
+
+                    <br>
+
+                    <button
+                      data-cr="${s.id}"
+                    >
+                      Receipt
+                    </button>
+
+                  </div>
+                `
+              )
+              .join('')
+          : '<p>No purchases yet.</p>'
+      }
+
+      <h3>Payment History</h3>
+
+      ${
+        customerPayments.length
+          ? customerPayments
+              .map(
+                p => `
+                  <div
+                    style="
+                      padding:8px 0;
+                      border-bottom:1px solid #ddd;
+                    "
+                  >
+
+                    ${formatDateTime(
+                      p.transactionAt ||
+                        p.date
+                    )}
+
+                    —
+                    <b>
+                      ${money(
+                        p.amount
+                      )}
+                    </b>
+
+                    —
+                    ${esc(
+                      p.method
+                    )}
+
+                    ${
+                      p.reference
+                        ? `
+                          <br>
+                          Reference:
+                          ${esc(
+                            p.reference
+                          )}
+                        `
+                        : ''
+                    }
+
+                  </div>
+                `
+              )
+              .join('')
+          : '<p>No payments yet.</p>'
+      }
+    `);
+
+    $('#cpay').onclick = () =>
+      customerPay(cid);
+
+    $('#cstatement').onclick = () =>
+      statement(cid);
+
+    $$('[data-cr]').forEach(
+      b =>
+        (b.onclick = () =>
+          receipt(
+            b.dataset.cr
+          ))
+    );
+  }
+
+  /* =========================================================
+     CUSTOMER PAYMENT
+     ========================================================= */
+
+  function customerPay(cid) {
+    const c =
+      customer(cid);
+
+    if (!c) return;
+
+    const outstanding =
+      balance(cid);
+
+    if (outstanding <= 0) {
+      return alert(
+        'This customer has no outstanding balance.'
+      );
+    }
+
+    const amount = Number(
+      prompt(
+        `${c.name}
+
+Outstanding:
+${money(outstanding)}
+
+Payment amount:`
+      )
+    );
+
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      amount > outstanding
+    ) {
+      return alert(
+        'Invalid payment.'
+      );
+    }
+
+    let method = prompt(
+      'Payment method: cash, transfer, pos or other',
+      'cash'
+    );
+
+    if (method === null) return;
+
+    method =
+      method.trim().toLowerCase() ||
+      'cash';
+
+    if (
+      ![
+        'cash',
+        'transfer',
+        'pos',
+        'other'
+      ].includes(method)
+    ) {
+      return alert(
+        'Invalid payment method.'
+      );
+    }
+
+    let reference = prompt(
+      'Payment reference (optional):',
+      ''
+    );
+
+    if (reference === null) {
+      reference = '';
+    }
+
+    /*
+       Allocate the customer's payment against the oldest
+       unpaid orders.
+
+       One customer can therefore have multiple orders,
+       while the payment is still reflected correctly
+       against those orders.
+    */
+
+    let remaining = amount;
+
+    const openSales =
+      sales
+        .filter(
+          s =>
+            s.customerId === cid &&
+            s.status !== 'cancelled' &&
+            saleBalance(s) > 0
+        )
+        .sort(
+          (a, b) =>
+            String(
+              a.transactionAt ||
+                a.date
+            ).localeCompare(
+              String(
+                b.transactionAt ||
+                  b.date
+              )
+            )
+        );
+
+    const date = today();
+    const time = timeNow();
+
+    for (const s of openSales) {
+      if (remaining <= 0) break;
+
+      const portion =
+        Math.min(
+          remaining,
+          saleBalance(s)
+        );
+
+      pay.push({
+        id: uid('PAY'),
+        customerId: cid,
+        saleId: s.id,
+        amount: portion,
+        date,
+        time,
+        transactionAt:
+          transactionTimestamp(
+            date,
+            time
+          ),
+        method,
+        reference,
+        status: 'completed'
+      });
+
+      remaining -= portion;
+
+      syncSalePaymentFields(s);
+    }
+
+    if (remaining > 0) {
+      return alert(
+        'Payment could not be fully allocated.'
+      );
+    }
+
+    save(K.pay, pay);
+    save(K.sales, sales);
+
+    renderCus();
+    renderCredit();
+    renderSales();
+    renderReports();
+
+    alert(
+      `Payment recorded.
+
+Date:
+${formatDateTime(
+        transactionTimestamp(
+          date,
+          time
+        )
+      )}
+
+Remaining customer balance:
+${money(balance(cid))}`
+    );
+  }
+
+  /* =========================================================
+     CUSTOMER STATEMENT
+     ========================================================= */
+
+  function statement(cid) {
+    const c =
+      customer(cid);
+
+    if (!c) return;
+
+    const rows = [];
+
+    sales
+      .filter(
+        s =>
+          s.customerId === cid &&
+          s.status !== 'cancelled'
+      )
+      .forEach(s => {
+        rows.push({
+          at:
+            s.transactionAt ||
+            `${s.date || today()}T00:00:00`,
+          type: 'Purchase',
+          reference: s.id,
+          debit: Number(
+            s.total || 0
+          ),
+          credit: 0
+        });
+      });
+
+    pay
+      .filter(
+        p =>
+          p.customerId === cid &&
+          p.status !== 'cancelled'
+      )
+      .forEach(p => {
+        rows.push({
+          at:
+            p.transactionAt ||
+            `${p.date || today()}T00:00:00`,
+          type: 'Payment',
+          reference:
+            p.reference ||
+            p.saleId ||
+            p.id,
+          debit: 0,
+          credit: Number(
+            p.amount || 0
+          )
+        });
+      });
+
+    /*
+       Sort using full timestamp.
+
+       If two transactions have the exact same timestamp,
+       purchases are shown before payments so the ledger
+       remains logically understandable.
+    */
+
+    rows.sort((a, b) => {
+      const diff =
+        new Date(a.at).getTime() -
+        new Date(b.at).getTime();
+
+      if (diff !== 0) return diff;
+
+      if (
+        a.type === 'Purchase' &&
+        b.type === 'Payment'
+      )
+        return -1;
+
+      if (
+        a.type === 'Payment' &&
+        b.type === 'Purchase'
+      )
+        return 1;
+
+      return 0;
+    });
+
+    let running = 0;
+
+    modal(`
+      <h2>
+        ${esc(c.name)}
+        — Statement
+      </h2>
+
+      <p>
+        Current Outstanding:
+        <b>
+          ${money(
+            balance(cid)
+          )}
+        </b>
+      </p>
+
+      <table
+        style="
+          width:100%;
+          border-collapse:collapse;
+        "
+      >
+
+        <tr>
+          <th>Date / Time</th>
+          <th>Type</th>
+          <th>Reference</th>
+          <th>Debit</th>
+          <th>Credit</th>
+          <th>Balance</th>
+        </tr>
+
+        ${rows
+          .map(x => {
+            running +=
+              x.debit - x.credit;
+
+            return `
               <tr>
 
                 <td>
-                  ${x.date}
+                  ${formatDateTime(
+                    x.at
+                  )}
                 </td>
 
                 <td>
@@ -2494,192 +2745,289 @@ function statement(cid){
                 </td>
 
                 <td>
-                  ${money(x.d)}
+                  ${esc(
+                    x.reference
+                  )}
                 </td>
 
                 <td>
-                  ${money(x.c)}
+                  ${money(
+                    x.debit
+                  )}
                 </td>
 
                 <td>
-                  ${money(run)}
+                  ${money(
+                    x.credit
+                  )}
+                </td>
+
+                <td>
+                  <b>
+                    ${money(
+                      running
+                    )}
+                  </b>
                 </td>
 
               </tr>
-
             `;
           })
-          .join('')
-      }
+          .join('')}
 
-    </table>
-  `);
-}
-
-/* =========================================================
-   CREDIT & DEBTORS
-   ========================================================= */
-
-function renderCredit(){
-
-  let r=
-    $('#credit-content');
-
-  let d=
-    cus.filter(
-      c=>
-        balance(c.id)>0
-    );
-
-  r.innerHTML=`
-
-    <div class="panel">
-
-      <h3>
-        Total Outstanding
-      </h3>
-
-      <h2>
-        ${money(
-          d.reduce(
-            (n,c)=>
-              n+balance(c.id),
-            0
-          )
-        )}
-      </h2>
-
-      <p>
-        Debtors:
-        ${d.length}
-      </p>
-
-    </div>
-
-    ${
-      d.map(c=>`
-
-        <div class="panel">
-
-          <b>
-            ${esc(c.name)}
-          </b>
-
-          <br>
-
-          Owing:
-
-          <b>
-            ${money(balance(c.id))}
-          </b>
-
-          <br>
-
-          <button
-            data-st="${c.id}"
-          >
-            Statement
-          </button>
-
-          <button
-            data-pp="${c.id}"
-          >
-            Record Payment
-          </button>
-
-        </div>
-
-      `).join('')
-    }
-  `;
-
-  $$('[data-st]',r).forEach(
-    b=>
-      b.onclick=()=>{
-        statement(b.dataset.st);
-      }
-  );
-
-  $$('[data-pp]',r).forEach(
-    b=>
-      b.onclick=()=>{
-        customerPay(b.dataset.pp);
-      }
-  );
-}
-
-/* =========================================================
-   RECEIPTS
-   ========================================================= */
-
-function receipt(id){
-
-  let s=
-    sales.find(
-      x=>x.id===id
-    );
-
-  if(!s)return;
-
-  let c=
-    customer(
-      s.customerId
-    );
-
-  let w=
-    open(
-      '',
-      '_blank'
-    );
-
-  if(!w){
-
-    return alert(
-      'Allow pop-ups for receipts.'
-    );
+      </table>
+    `);
   }
 
-  w.document.write(`
+  /* =========================================================
+     CREDIT / DEBTORS
+     ========================================================= */
 
-    <html>
+  function renderCredit() {
+    const r =
+      $('#credit-content');
 
-      <head>
+    const debtors =
+      cus.filter(
+        c => balance(c.id) > 0
+      );
 
-        <title>
-          ${s.id}
-        </title>
+    r.innerHTML = `
+      <div class="panel">
 
-      </head>
-
-      <body
-        style="font-family:Arial;max-width:700px;margin:30px auto"
-      >
+        <h3>Total Outstanding</h3>
 
         <h2>
-          ${esc(
-            biz.name||
-            'Free Ofis'
+          ${money(
+            debtors.reduce(
+              (n, c) =>
+                n + balance(c.id),
+              0
+            )
           )}
         </h2>
 
         <p>
+          Debtors:
+          ${debtors.length}
+        </p>
 
+      </div>
+
+      ${
+        debtors.length
+          ? debtors
+              .map(
+                c => `
+                  <div class="panel">
+
+                    <button
+                      data-customer="${c.id}"
+                      style="
+                        background:none;
+                        border:0;
+                        padding:0;
+                        font-size:18px;
+                        font-weight:bold;
+                        cursor:pointer;
+                      "
+                    >
+                      ${esc(c.name)}
+                    </button>
+
+                    <br>
+
+                    Owing:
+                    <b>
+                      ${money(
+                        balance(c.id)
+                      )}
+                    </b>
+
+                    <br><br>
+
+                    <button
+                      data-st="${c.id}"
+                    >
+                      Statement
+                    </button>
+
+                    <button
+                      data-pp="${c.id}"
+                    >
+                      Record Payment
+                    </button>
+
+                  </div>
+                `
+              )
+              .join('')
+          : '<p>No outstanding debtors.</p>'
+      }
+    `;
+
+    $$('[data-customer]', r).forEach(
+      b =>
+        (b.onclick = () =>
+          customerPage(
+            b.dataset.customer
+          ))
+    );
+
+    $$('[data-st]', r).forEach(
+      b =>
+        (b.onclick = () =>
+          statement(
+            b.dataset.st
+          ))
+    );
+
+    $$('[data-pp]', r).forEach(
+      b =>
+        (b.onclick = () =>
+          customerPay(
+            b.dataset.pp
+          ))
+    );
+  }
+
+  /* =========================================================
+     RECEIPT
+     ========================================================= */
+
+  function receipt(id) {
+    const s =
+      sales.find(x => x.id === id);
+
+    if (!s) return;
+
+    const c =
+      customer(s.customerId);
+
+    const w =
+      window.open(
+        '',
+        '_blank'
+      );
+
+    if (!w) {
+      return alert(
+        'Allow pop-ups for receipts.'
+      );
+    }
+
+    const paid =
+      salePaid(s);
+
+    const outstanding =
+      saleBalance(s);
+
+    w.document.write(`
+      <!doctype html>
+
+      <html>
+
+      <head>
+
+        <meta charset="utf-8">
+
+        <meta
+          name="viewport"
+          content="width=device-width,initial-scale=1"
+        >
+
+        <title>
+          Receipt ${esc(s.id)}
+        </title>
+
+        <style>
+
+          body {
+            font-family: Arial, sans-serif;
+            max-width: 700px;
+            margin: 30px auto;
+            padding: 20px;
+          }
+
+          button {
+            padding: 10px 16px;
+            margin-right: 8px;
+            cursor: pointer;
+          }
+
+          table {
+            width: 100%;
+            border-collapse: collapse;
+          }
+
+          th,
+          td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+          }
+
+          .actions {
+            margin-bottom: 20px;
+          }
+
+          @media print {
+            .actions {
+              display:none;
+            }
+          }
+
+        </style>
+
+      </head>
+
+      <body>
+
+        <div class="actions">
+
+          <button
+            onclick="history.back()"
+          >
+            ← Back
+          </button>
+
+          <button
+            onclick="window.print()"
+          >
+            Print
+          </button>
+
+        </div>
+
+        <h2>
           ${esc(
-            biz.address||''
+            biz.name ||
+              'FREE OFIS'
           )}
+        </h2>
 
-          <br>
+        <p>
+          ${
+            esc(
+              biz.address || ''
+            )
+          }
 
-          ${esc(
-            biz.phone||''
-          )}
+          ${
+            biz.phone
+              ? `<br>${esc(
+                  biz.phone
+                )}`
+              : ''
+          }
 
-          <br>
-
-          ${esc(
-            biz.email||''
-          )}
-
+          ${
+            biz.email
+              ? `<br>${esc(
+                  biz.email
+                )}`
+              : ''
+          }
         </p>
 
         <hr>
@@ -2687,56 +3035,38 @@ function receipt(id){
         <p>
 
           Receipt:
-          <b>
-            ${s.id}
-          </b>
+          <b>${esc(s.id)}</b>
 
           <br>
 
-          Date:
-          ${s.date}
+          Date & Time:
+          ${formatDateTime(
+            s.transactionAt ||
+              s.date
+          )}
 
           <br>
 
           Customer:
           ${esc(
-            c?.name||
-            'Walk-in Customer'
+            c?.name ||
+              'Walk-in Customer'
           )}
 
         </p>
 
-        <table
-          border="1"
-          cellspacing="0"
-          cellpadding="8"
-          width="100%"
-        >
+        <table>
 
           <tr>
-
-            <th>
-              Item
-            </th>
-
-            <th>
-              Qty
-            </th>
-
-            <th>
-              Price
-            </th>
-
-            <th>
-              Total
-            </th>
-
+            <th>Item</th>
+            <th>Qty</th>
+            <th>Price</th>
+            <th>Total</th>
           </tr>
 
-          ${
-            s.items
-              .map(i=>`
-
+          ${s.items
+            .map(
+              i => `
                 <tr>
 
                   <td>
@@ -2748,18 +3078,21 @@ function receipt(id){
                   </td>
 
                   <td>
-                    ${money(i.unitPrice)}
+                    ${money(
+                      i.unitPrice
+                    )}
                   </td>
 
                   <td>
-                    ${money(i.subtotal)}
+                    ${money(
+                      i.subtotal
+                    )}
                   </td>
 
                 </tr>
-
-              `)
-              .join('')
-          }
+              `
+            )
+            .join('')}
 
         </table>
 
@@ -2771,488 +3104,575 @@ function receipt(id){
         <p>
 
           Paid:
-          ${money(salePaid(s))}
+          ${money(paid)}
 
           <br>
 
           Balance:
-          ${money(saleBalance(s))}
+          ${money(
+            outstanding
+          )}
 
           <br>
 
           Payment:
-          ${esc(s.method)}
+          ${esc(
+            s.method || 'credit'
+          )}
 
         </p>
 
-        <script>
-
-          onload=()=>print()
-
-        <\/script>
-
       </body>
 
-    </html>
-  `);
+      </html>
+    `);
 
-  w.document.close();
-}
-
-function renderReceipts(){
-
-  let r=
-    $('#receipts-content');
-
-  r.innerHTML=`
-
-    <div class="panel">
-
-      <b>
-
-        ${esc(
-          biz.name||
-          'Seller information not set'
-        )}
-
-      </b>
-
-      <br>
-
-      ${esc(
-        biz.address||''
-      )}
-
-      <br>
-
-      ${esc(
-        biz.phone||''
-      )}
-
-      <br><br>
-
-      <button
-        class="primary"
-        onclick="document.querySelector('[data-section=settings]').click()"
-      >
-        Edit Seller Information
-      </button>
-
-    </div>
-
-    <div class="panel">
-
-      ${
-        sales
-          .slice()
-          .reverse()
-          .slice(0,50)
-          .map(s=>`
-
-            <p>
-
-              ${s.date}
-              —
-              ${s.id}
-              —
-              ${money(s.total)}
-
-              <button
-                data-r="${s.id}"
-              >
-                Print
-              </button>
-
-            </p>
-
-          `)
-          .join('')
-
-        ||
-        '<p>No receipts.</p>'
-      }
-
-    </div>
-  `;
-
-  $$('[data-r]',r).forEach(
-    b=>
-      b.onclick=()=>{
-        receipt(
-          b.dataset.r
-        );
-      }
-  );
-}
-
-/* =========================================================
-   REPORTS
-   ========================================================= */
-
-function renderReports(){
-
-  let valid=
-    sales.filter(
-      s=>
-        s.status!=='cancelled'
-    );
-
-  let st=
-    valid.reduce(
-      (n,s)=>
-        n+s.total,
-      0
-    );
-
-  let received=
-    pay.reduce(
-      (n,p)=>
-        n+
-        (
-          p.status!=='cancelled'
-          ?Number(p.amount||0)
-          :0
-        ),
-      0
-    );
-
-  let deb=
-    cus.reduce(
-      (n,c)=>
-        n+balance(c.id),
-      0
-    );
-
-  let ex=
-    exp.reduce(
-      (n,e)=>
-        n+e.amount,
-      0
-    );
-
-  $('#reports-content').innerHTML=`
-
-    <div class="panel">
-
-      <p>
-
-        Total sales:
-
-        <b>
-          ${money(st)}
-        </b>
-
-      </p>
-
-      <p>
-
-        Payments received:
-
-        <b>
-          ${money(received)}
-        </b>
-
-      </p>
-
-      <p>
-
-        Credit outstanding:
-
-        <b>
-          ${money(deb)}
-        </b>
-
-      </p>
-
-      <p>
-
-        Expenses:
-
-        <b>
-          ${money(ex)}
-        </b>
-
-      </p>
-
-      <p>
-
-        Net cash movement:
-
-        <b>
-          ${money(received-ex)}
-        </b>
-
-      </p>
-
-      <p>
-
-        Orders:
-
-        <b>
-          ${valid.length}
-        </b>
-
-      </p>
-
-    </div>
-  `;
-}
-
-/* =========================================================
-   EXPENSES
-   ========================================================= */
-
-function renderExpenses(){
-
-  let r=
-    $('#expenses-content');
-
-  r.innerHTML=`
-
-    <div class="panel">
-
-      <button
-        class="primary"
-        id="ae"
-      >
-        + Add Expense
-      </button>
-
-      <div id="ef"></div>
-
-    </div>
-
-    <div class="panel">
-
-      ${
-        exp
-          .slice()
-          .reverse()
-          .map(
-            x=>
-              `${x.date} — ${esc(x.description)} — ${money(x.amount)}`
-          )
-          .join('<br>')
-
-        ||
-        'No expenses.'
-      }
-
-    </div>
-  `;
-
-  $('#ae').onclick=()=>{
-
-    $('#ef').innerHTML=`
-
-      <form id="exf">
-
-        <input
-          id="ed"
-          placeholder="Description"
-          required
-        >
-
-        <br><br>
-
-        <input
-          id="ea"
-          type="number"
-          min="0"
-          placeholder="Amount"
-          required
-        >
-
-        <br><br>
-
-        <input
-          id="exd"
-          type="date"
-          value="${today()}"
-          required
-        >
-
-        <br><br>
-
-        <button class="primary">
-          Save Expense
-        </button>
-
-      </form>
-    `;
-
-    $('#exf').onsubmit=e=>{
-
-      e.preventDefault();
-
-      exp.push({
-
-        id:
-          uid('EXP'),
-
-        description:
-          $('#ed').value,
-
-        amount:
-          Number(
-            $('#ea').value
-          ),
-
-        date:
-          $('#exd').value
-      });
-
-      save(K.exp,exp);
-
-      renderExpenses();
-    };
-  };
-}
-
-/* =========================================================
-   SETTINGS
-   ========================================================= */
-
-function renderSettings(){
-
-  let s=$('#settings');
-
-  let r=
-    $('.freeofis-set',s);
-
-  if(!r){
-
-    r=
-      document.createElement('div');
-
-    r.className=
-      'freeofis-set';
-
-    s.appendChild(r);
+    w.document.close();
   }
 
-  r.innerHTML=`
+  /* =========================================================
+     RECEIPTS LIST
+     ========================================================= */
 
-    <div class="panel">
+  function renderReceipts() {
+    const r =
+      $('#receipts-content');
 
-      <h3>
-        Seller / Store Information
-      </h3>
+    r.innerHTML = `
+      <div class="panel">
 
-      <form id="bf">
+        <b>
+          ${esc(
+            biz.name ||
+              'Seller information not set'
+          )}
+        </b>
 
-        <input
-          id="bn"
-          placeholder="Store name"
-          value="${esc(biz.name)}"
-        >
+        <br>
 
-        <br><br>
+        ${esc(
+          biz.address || ''
+        )}
 
-        <input
-          id="ba"
-          placeholder="Address"
-          value="${esc(biz.address)}"
-        >
+        <br>
 
-        <br><br>
+        ${esc(
+          biz.phone || ''
+        )}
 
-        <input
-          id="bp"
-          placeholder="Phone"
-          value="${esc(biz.phone)}"
-        >
+        <br>
 
-        <br><br>
-
-        <input
-          id="be"
-          placeholder="Email"
-          value="${esc(biz.email)}"
-        >
+        ${esc(
+          biz.email || ''
+        )}
 
         <br><br>
 
-        <button class="primary">
-          Save
+        <button
+          class="primary"
+          id="editSeller"
+        >
+          Edit Seller Information
         </button>
 
-      </form>
+      </div>
 
-    </div>
-  `;
+      <div class="panel">
 
-  $('#bf').onsubmit=e=>{
+        <h3>Recent Receipts</h3>
 
-    e.preventDefault();
+        ${
+          sales.length
+            ? sales
+                .slice()
+                .reverse()
+                .slice(0, 50)
+                .map(
+                  s => `
+                    <p>
 
-    biz={
+                      ${formatDateTime(
+                        s.transactionAt ||
+                          s.date
+                      )}
 
-      name:
-        $('#bn').value,
+                      —
+                      ${esc(s.id)}
 
-      address:
-        $('#ba').value,
+                      —
+                      ${money(s.total)}
 
-      phone:
-        $('#bp').value,
+                      <button
+                        data-r="${s.id}"
+                      >
+                        Print / View
+                      </button>
 
-      email:
-        $('#be').value
-    };
+                    </p>
+                  `
+                )
+                .join('')
+            : '<p>No receipts.</p>'
+        }
 
-    save(K.biz,biz);
+      </div>
+    `;
 
-    alert(
-      'Seller information saved.'
+    $('#editSeller').onclick =
+      () => show('settings');
+
+    $$('[data-r]', r).forEach(
+      b =>
+        (b.onclick = () =>
+          receipt(
+            b.dataset.r
+          ))
     );
-  };
-}
+  }
 
-/* =========================================================
-   MODAL
-   ========================================================= */
+  /* =========================================================
+     REPORTS
+     ========================================================= */
 
-function modal(h){
+  function renderReports() {
+    const valid =
+      sales.filter(
+        s =>
+          s.status !== 'cancelled'
+      );
 
-  let o=
-    document.createElement('div');
+    const salesTotal =
+      valid.reduce(
+        (n, s) =>
+          n + Number(s.total || 0),
+        0
+      );
 
-  o.style=
-    'position:fixed;inset:0;background:#0008;z-index:9999;padding:20px;overflow:auto';
+    const received =
+      pay.reduce(
+        (n, p) =>
+          n +
+          (
+            p.status !== 'cancelled'
+              ? Number(
+                  p.amount || 0
+                )
+              : 0
+          ),
+        0
+      );
 
-  o.innerHTML=`
+    const debt =
+      cus.reduce(
+        (n, c) =>
+          n + balance(c.id),
+        0
+      );
 
-    <div
-      style="background:white;max-width:800px;margin:40px auto;padding:24px;border-radius:12px"
-    >
+    const expenses =
+      exp.reduce(
+        (n, e) =>
+          n + Number(e.amount || 0),
+        0
+      );
 
-      <button
-        id="x"
-        style="float:right"
+    $('#reports-content').innerHTML = `
+      <div class="panel">
+
+        <p>
+          Total sales:
+          <b>
+            ${money(
+              salesTotal
+            )}
+          </b>
+        </p>
+
+        <p>
+          Payments received:
+          <b>
+            ${money(
+              received
+            )}
+          </b>
+        </p>
+
+        <p>
+          Credit outstanding:
+          <b>
+            ${money(debt)}
+          </b>
+        </p>
+
+        <p>
+          Expenses:
+          <b>
+            ${money(
+              expenses
+            )}
+          </b>
+        </p>
+
+        <p>
+          Net cash movement:
+          <b>
+            ${money(
+              received -
+                expenses
+            )}
+          </b>
+        </p>
+
+        <p>
+          Orders:
+          <b>
+            ${valid.length}
+          </b>
+        </p>
+
+      </div>
+    `;
+  }
+
+  /* =========================================================
+     EXPENSES
+     ========================================================= */
+
+  function renderExpenses() {
+    const r =
+      $('#expenses-content');
+
+    r.innerHTML = `
+      <div class="panel">
+
+        <button
+          class="primary"
+          id="ae"
+        >
+          + Add Expense
+        </button>
+
+        <div id="ef"></div>
+
+      </div>
+
+      <div class="panel">
+
+        ${
+          exp.length
+            ? exp
+                .slice()
+                .reverse()
+                .map(
+                  x => `
+                    ${formatDateTime(
+                      x.transactionAt ||
+                        `${x.date}T00:00:00`
+                    )}
+                    —
+                    ${esc(
+                      x.description
+                    )}
+                    —
+                    ${money(
+                      x.amount
+                    )}
+                    <br>
+                  `
+                )
+                .join('')
+            : 'No expenses.'
+        }
+
+      </div>
+    `;
+
+    $('#ae').onclick = () => {
+      $('#ef').innerHTML = `
+        <form id="exf">
+
+          <input
+            id="ed"
+            placeholder="Description"
+            required
+          >
+
+          <br><br>
+
+          <input
+            id="ea"
+            type="number"
+            min="0"
+            placeholder="Amount"
+            required
+          >
+
+          <br><br>
+
+          <input
+            id="exd"
+            type="date"
+            value="${today()}"
+            required
+          >
+
+          <br><br>
+
+          <input
+            id="ext"
+            type="time"
+            value="${timeNow()}"
+            required
+          >
+
+          <br><br>
+
+          <button class="primary">
+            Save Expense
+          </button>
+
+        </form>
+      `;
+
+      $('#exf').onsubmit = e => {
+        e.preventDefault();
+
+        const date =
+          $('#exd').value;
+
+        const time =
+          $('#ext').value;
+
+        exp.push({
+          id: uid('EXP'),
+          description:
+            $('#ed').value.trim(),
+          amount:
+            Number(
+              $('#ea').value
+            ),
+          date,
+          time,
+          transactionAt:
+            transactionTimestamp(
+              date,
+              time
+            )
+        });
+
+        save(K.exp, exp);
+
+        renderExpenses();
+      };
+    };
+  }
+
+  /* =========================================================
+     SETTINGS / BUSINESS DETAILS
+     ========================================================= */
+
+  function renderSettings() {
+    const s =
+      $('#settings');
+
+    let r =
+      $('.freeofis-set', s);
+
+    if (!r) {
+      r =
+        document.createElement(
+          'div'
+        );
+
+      r.className =
+        'freeofis-set';
+
+      s.appendChild(r);
+    }
+
+    r.innerHTML = `
+      <div class="panel">
+
+        <h3>
+          Seller / Store Information
+        </h3>
+
+        <p>
+          These details will appear
+          on receipts.
+        </p>
+
+        <form id="bf">
+
+          <input
+            id="bn"
+            placeholder="Store / Business name"
+            value="${esc(
+              biz.name || ''
+            )}"
+          >
+
+          <br><br>
+
+          <input
+            id="ba"
+            placeholder="Business address"
+            value="${esc(
+              biz.address || ''
+            )}"
+          >
+
+          <br><br>
+
+          <input
+            id="bp"
+            placeholder="Business phone"
+            value="${esc(
+              biz.phone || ''
+            )}"
+          >
+
+          <br><br>
+
+          <input
+            id="be"
+            type="email"
+            placeholder="Business email"
+            value="${esc(
+              biz.email || ''
+            )}"
+          >
+
+          <br><br>
+
+          <button
+            class="primary"
+            type="submit"
+          >
+            Save Business Information
+          </button>
+
+        </form>
+
+      </div>
+    `;
+
+    $('#bf').onsubmit = e => {
+      e.preventDefault();
+
+      biz = {
+        name:
+          $('#bn').value.trim(),
+
+        address:
+          $('#ba').value.trim(),
+
+        phone:
+          $('#bp').value.trim(),
+
+        email:
+          $('#be').value.trim()
+      };
+
+      /*
+         Save immediately and verify that the value actually
+         reached localStorage.
+      */
+
+      save(K.biz, biz);
+
+      const saved =
+        load(K.biz, {});
+
+      if (
+        saved.name !== biz.name ||
+        saved.address !==
+          biz.address ||
+        saved.phone !==
+          biz.phone ||
+        saved.email !==
+          biz.email
+      ) {
+        return alert(
+          'Business information could not be saved.'
+        );
+      }
+
+      alert(
+        'Business information saved successfully.'
+      );
+
+      renderSettings();
+    };
+  }
+
+  /* =========================================================
+     MODAL
+     ========================================================= */
+
+  function modal(html) {
+    const old =
+      $('.freeofis-modal');
+
+    if (old) {
+      old.remove();
+    }
+
+    const o =
+      document.createElement(
+        'div'
+      );
+
+    o.className =
+      'freeofis-modal';
+
+    o.style = `
+      position:fixed;
+      inset:0;
+      background:#0008;
+      z-index:9999;
+      padding:20px;
+      overflow:auto;
+    `;
+
+    o.innerHTML = `
+      <div
+        style="
+          background:white;
+          max-width:900px;
+          margin:40px auto;
+          padding:24px;
+          border-radius:12px;
+        "
       >
-        Close
-      </button>
 
-      ${h}
+        <button
+          id="x"
+          style="
+            float:right;
+            padding:8px 12px;
+          "
+        >
+          Close
+        </button>
 
-    </div>
-  `;
+        ${html}
 
-  document.body.appendChild(o);
+      </div>
+    `;
 
-  $('#x',o).onclick=
-    ()=>o.remove();
-}
+    document.body.appendChild(o);
 
-/* =========================================================
-   INITIAL RENDER
-   ========================================================= */
+    $('#x', o).onclick =
+      () => o.remove();
+  }
 
-renderInv();
+  /* =========================================================
+     INITIAL RENDER
+     ========================================================= */
 
-renderSales();
-
-show('home');
+  renderInv();
+  renderSales();
+  show('home');
 
 });
