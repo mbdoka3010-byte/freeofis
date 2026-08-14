@@ -3396,7 +3396,7 @@ ${money(balance(cid))}`
         <div class="actions">
 
           <button
-            onclick="window.closed"
+            onclick="window.close()"
           >
             ← Back
           </button>
