@@ -3396,7 +3396,7 @@ ${money(balance(cid))}`
         <div class="actions">
 
           <button
-            onclick="history.back()"
+            onclick="window.closed"
           >
             ← Back
           </button>
