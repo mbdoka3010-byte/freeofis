@@ -2584,21 +2584,30 @@ ${money(saleBalance(s))}`
      CUSTOMER PAGE
      ========================================================= */
 
-  function customerPage(cid) {
-    const c =
-      customer(cid);
+ function customerPage(cid) {
+  const isWalkIn = cid === '__walkin__';
+  const actualCid = isWalkIn ? null : cid;
 
-    if (!c) {
-      return alert(
-        'Customer not found.'
-      );
-    }
+  const c = isWalkIn
+    ? {
+        id: null,
+        name: 'Walk-in Customer',
+        phone: '',
+        address: ''
+      }
+    : customer(cid);
+
+  if (!c) {
+    return alert(
+      'Customer not found.'
+    );
+  }
 
     const customerSales =
       sales
         .filter(
           s =>
-            s.customerId === cid &&
+            s.customerId === actualCid &&
             s.status !== 'cancelled'
         )
         .sort(
@@ -2618,7 +2627,7 @@ ${money(saleBalance(s))}`
     const customerPayments =
       pay
         .filter(
-          p => p.customerId === cid
+          p => p.customerId === actualCid
         )
         .sort(
           (a, b) =>
