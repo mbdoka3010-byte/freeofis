@@ -1,5 +1,5 @@
 export const V4_DATABASE_NAME = 'freeofis_v4';
-export const V4_DATABASE_VERSION = 5;
+export const V4_DATABASE_VERSION = 6;
 
 export const V4_STORES = Object.freeze({
   accounts: 'accounts',
@@ -33,7 +33,13 @@ export const V4_STORES = Object.freeze({
   customerCreditNotes: 'customerCreditNotes', customerCreditNoteLines: 'customerCreditNoteLines',
   salesReturns: 'salesReturns', salesReturnLines: 'salesReturnLines', customerRefunds: 'customerRefunds',
   inventoryCostRecognitions: 'inventoryCostRecognitions', documentSequences: 'documentSequences',
-  idempotencyRecords: 'idempotencyRecords'
+  idempotencyRecords: 'idempotencyRecords',
+  ledgerAccounts: 'ledgerAccounts', accountMappings: 'accountMappings',
+  journalEntries: 'journalEntries', journalEntryLines: 'journalEntryLines',
+  financialAccounts: 'financialAccounts', financeTransactions: 'financeTransactions',
+  expensesV4: 'expensesV4', accountingPeriods: 'accountingPeriods',
+  openingBalanceBatches: 'openingBalanceBatches',
+  financePostingCheckpoints: 'financePostingCheckpoints', financePostingFailures: 'financePostingFailures'
 });
 
 export const V4_STORE_DEFINITIONS = Object.freeze([
@@ -247,6 +253,19 @@ export const V4_STORE_DEFINITIONS = Object.freeze([
     ['documentSequences',[['byScope',['businessId','operatingUnitId','documentType','year']]]],
     ['idempotencyRecords',[['byScopeAndKey',['businessId','commandType','idempotencyKey']]]]
   ].map(([name,indexes])=>({name:V4_STORES[name],options:{keyPath:'id'},indexes:indexes.map(([indexName,keyPath])=>({name:indexName,keyPath,options:{unique:['byInvoiceNumber','byCreditNoteNumber','byReturnNumber','byRefundNumber','byScope','byScopeAndKey'].includes(indexName)}}))}))
+  ,...[
+    ['ledgerAccounts',[['byBusinessId','businessId'],['byBusinessAndCode',['businessId','accountCode']],['byBusinessAndSystemRole',['businessId','systemRole']],['byParentId','parentAccountId']]],
+    ['accountMappings',[['byBusinessId','businessId'],['byResolutionKey',['businessId','mappingType','dimensionType','dimensionId']]]],
+    ['journalEntries',[['byBusinessId','businessId'],['byAccountingDate',['businessId','accountingDate']],['byJournalNumber',['businessId','journalNumber']],['byPostingIdentity',['businessId','sourceModule','sourceEntityType','sourceEntityId','postingRuleCode','postingRuleVersion']],['byReversalOfId','reversalOfJournalEntryId']]],
+    ['journalEntryLines',[['byJournalEntryId','journalEntryId'],['byAccountId','accountId'],['byCustomerId','customerId'],['bySupplierId','supplierId'],['byProductId','productId']]],
+    ['financialAccounts',[['byBusinessId','businessId'],['byLedgerAccountId','ledgerAccountId']]],
+    ['financeTransactions',[['byBusinessId','businessId'],['byTransactionAt','transactionAt'],['byType',['businessId','transactionType']]]],
+    ['expensesV4',[['byBusinessId','businessId'],['byAccountingDate',['businessId','accountingDate']]]],
+    ['accountingPeriods',[['byBusinessId','businessId'],['byBusinessAndRange',['businessId','startDate','endDate']]]],
+    ['openingBalanceBatches',[['byBusinessId','businessId'],['byCutoverDate',['businessId','cutoverDate']],['byIdempotency',['businessId','idempotencyKey']]]],
+    ['financePostingCheckpoints',[['byPostingIdentity',['businessId','sourceModule','postingRuleCode']]]],
+    ['financePostingFailures',[['byBusinessId','businessId'],['byPostingIdentity',['businessId','sourceModule','sourceEntityType','sourceEntityId','postingRuleCode','postingRuleVersion']]]]
+  ].map(([name,indexes])=>({name:V4_STORES[name],options:{keyPath:'id'},indexes:indexes.map(([indexName,keyPath])=>({name:indexName,keyPath,options:{unique:['byBusinessAndCode','byBusinessAndSystemRole','byResolutionKey','byJournalNumber','byPostingIdentity','byReversalOfId','byBusinessAndRange','byIdempotency'].includes(indexName)}}))}))
 ]);
 
 function hasName(collection, name) {

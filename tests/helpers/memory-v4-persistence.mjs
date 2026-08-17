@@ -37,8 +37,8 @@ export class MemoryV4Persistence {
     for (const index of definition.indexes.filter(candidate => candidate.options?.unique)) {
       const candidateValue = valueAtKeyPath(record, index.keyPath);
       if (
-        candidateValue === undefined ||
-        (Array.isArray(candidateValue) && candidateValue.some(value => value === undefined))
+        candidateValue === undefined || candidateValue === null ||
+        (Array.isArray(candidateValue) && candidateValue.some(value => value === undefined || value === null))
       ) continue;
       const candidate = keyToken(candidateValue);
       for (const [key, existing] of store) {

@@ -33,6 +33,21 @@ export const PERMISSION_CATALOG = Object.freeze([
   ['finance.view', 'finance', 'View finance'],
   ['finance.post', 'finance', 'Post financial entries'],
   ['finance.adjust', 'finance', 'Adjust financial entries'],
+  ['finance.accounts.view', 'finance', 'View ledger and financial accounts'],
+  ['finance.accounts.manage', 'finance', 'Manage ledger and financial accounts'],
+  ['finance.journal.view', 'finance', 'View Journal Entries'],
+  ['finance.journal.create', 'finance', 'Create Manual Journals'],
+  ['finance.journal.post', 'finance', 'Post Journal Entries'],
+  ['finance.journal.reverse', 'finance', 'Reverse posted Journal Entries'],
+  ['finance.expenses.view', 'finance', 'View Expenses'],
+  ['finance.expenses.record', 'finance', 'Record Expenses'],
+  ['finance.cash_transfer', 'finance', 'Transfer cash or bank funds'],
+  ['finance.capital.record', 'finance', 'Record capital contributions'],
+  ['finance.drawings.record', 'finance', 'Record Owner Drawings'],
+  ['finance.period.close', 'finance', 'Close accounting periods'],
+  ['finance.period.reopen', 'finance', 'Reopen accounting periods'],
+  ['finance.reports.view', 'finance', 'View Finance reports'],
+  ['finance.opening_balance', 'finance', 'Post opening balances'],
   ['reports.view', 'reports', 'View reports'],
   ['documents.issue', 'documents', 'Issue documents'],
   ['documents.share', 'documents', 'Share documents'],
@@ -82,5 +97,5 @@ export const SYSTEM_ROLE_DEFINITIONS = Object.freeze([
 ].map(role => Object.freeze({ ...role, permissionCodes: Object.freeze(role.permissionCodes) })));
 
 export const PERMISSION_CODES = Object.freeze(ALL);
-export const PERMISSION_CATALOG_VERSION = 4;
-export const SYSTEM_ROLE_TEMPLATE_VERSION = 4;
+export const PERMISSION_CATALOG_VERSION = 5;
+export const SYSTEM_ROLE_TEMPLATE_VERSION = 5;
