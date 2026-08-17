@@ -51,49 +51,64 @@ export class MemoryV4Persistence {
     }
   }
 
-  #context(data, mode) {
+  #context(data, mode, declaredStoreNames) {
     const writable = mode === 'readwrite';
+    const declared = new Set(declaredStoreNames);
+    const assertDeclared = storeName => {
+      if (!declared.has(storeName)) {
+        throw new Error(`Store not in transaction: ${storeName}`);
+      }
+    };
+    const store = storeName => {
+      assertDeclared(storeName);
+      return this.#store(data, storeName);
+    };
     return {
-      get: async (storeName, key) => clone(this.#store(data, storeName).get(keyToken(key))),
-      getAll: async storeName => clone([...this.#store(data, storeName).values()]),
+      get: async (storeName, key) => clone(store(storeName).get(keyToken(key))),
+      getAll: async storeName => clone([...store(storeName).values()]),
       getByIndex: async (storeName, indexName, query) => {
+        assertDeclared(storeName);
         const definition = this.definitions.get(storeName);
         const index = definition.indexes.find(candidate => candidate.name === indexName);
         if (!index) throw new Error(`Unknown index: ${storeName}.${indexName}`);
-        const match = [...this.#store(data, storeName).values()].find(
+        const match = [...store(storeName).values()].find(
           record => keyToken(valueAtKeyPath(record, index.keyPath)) === keyToken(query)
         );
         return clone(match);
       },
       getAllByIndex: async (storeName, indexName, query) => {
+        assertDeclared(storeName);
         const definition = this.definitions.get(storeName);
         const index = definition.indexes.find(candidate => candidate.name === indexName);
         if (!index) throw new Error(`Unknown index: ${storeName}.${indexName}`);
-        return clone([...this.#store(data, storeName).values()].filter(
+        return clone([...store(storeName).values()].filter(
           record => keyToken(valueAtKeyPath(record, index.keyPath)) === keyToken(query)
         ));
       },
       add: async (storeName, value) => {
+        assertDeclared(storeName);
         if (!writable) throw new Error('Readonly transaction cannot add.');
         const record = clone(value);
         const key = keyToken(this.#primaryKey(storeName, record));
-        const store = this.#store(data, storeName);
-        if (store.has(key)) throw new Error(`Duplicate key in ${storeName}`);
+        const target = store(storeName);
+        if (target.has(key)) throw new Error(`Duplicate key in ${storeName}`);
         this.#assertUnique(data, storeName, record);
-        store.set(key, record);
+        target.set(key, record);
         return this.#primaryKey(storeName, record);
       },
       put: async (storeName, value) => {
+        assertDeclared(storeName);
         if (!writable) throw new Error('Readonly transaction cannot put.');
         const record = clone(value);
         const key = keyToken(this.#primaryKey(storeName, record));
         this.#assertUnique(data, storeName, record, key);
-        this.#store(data, storeName).set(key, record);
+        store(storeName).set(key, record);
         return this.#primaryKey(storeName, record);
       },
       delete: async (storeName, key) => {
+        assertDeclared(storeName);
         if (!writable) throw new Error('Readonly transaction cannot delete.');
-        this.#store(data, storeName).delete(keyToken(key));
+        store(storeName).delete(keyToken(key));
       }
     };
   }
@@ -108,7 +123,7 @@ export class MemoryV4Persistence {
         ]))
       : this.data;
 
-    const result = await work(this.#context(transactionData, mode));
+    const result = await work(this.#context(transactionData, mode, names));
     if (mode === 'readwrite') this.data = transactionData;
     return result;
   }

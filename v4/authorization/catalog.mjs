@@ -2,6 +2,10 @@ export const PERMISSION_CATALOG = Object.freeze([
   ['sales.create', 'sales', 'Create sales'],
   ['sales.view', 'sales', 'View sales'],
   ['sales.cancel', 'sales', 'Cancel sales'],
+  ['sales.fulfill', 'sales', 'Fulfil sales'],
+  ['sales.credit', 'sales', 'Grant Customer credit'],
+  ['sales.discount', 'sales', 'Apply sales discounts'],
+  ['sales.return', 'sales', 'Return sold goods'],
   ['sales.refund', 'sales', 'Refund sales'],
   ['payments.create', 'payments', 'Record payments'],
   ['payments.cancel', 'payments', 'Cancel payments'],
@@ -9,6 +13,11 @@ export const PERMISSION_CATALOG = Object.freeze([
   ['customers.create', 'customers', 'Create customers'],
   ['customers.edit', 'customers', 'Edit customers'],
   ['customers.view', 'customers', 'View customers'],
+  ['customers.manage', 'customers', 'Manage customers'],
+  ['receivables.view', 'receivables', 'View receivables'],
+  ['customer_payments.view', 'customer_payments', 'View Customer payments'],
+  ['customer_payments.record', 'customer_payments', 'Record Customer payments'],
+  ['customer_payments.reverse', 'customer_payments', 'Reverse Customer payments'],
   ['inventory.view', 'inventory', 'View inventory'],
   ['inventory.adjust', 'inventory', 'Adjust inventory'],
   ['inventory.transfer', 'inventory', 'Transfer inventory'],
@@ -47,7 +56,8 @@ export const SYSTEM_ROLE_DEFINITIONS = Object.freeze([
     code: 'cashier',
     name: 'Cashier',
     permissionCodes: [
-      'sales.create', 'sales.view', 'payments.create', 'payments.view',
+      'sales.create', 'sales.view', 'sales.fulfill', 'payments.create', 'payments.view',
+      'customer_payments.record', 'customer_payments.view',
       'customers.create', 'customers.view', 'inventory.view', 'documents.issue'
     ]
   },
@@ -55,7 +65,7 @@ export const SYSTEM_ROLE_DEFINITIONS = Object.freeze([
     code: 'accountant',
     name: 'Accountant',
     permissionCodes: [
-      'sales.view', 'payments.view', 'customers.view', 'purchases.create',
+      'sales.view', 'payments.view', 'customer_payments.view', 'receivables.view', 'customers.view', 'purchases.create',
       'purchases.receive', 'finance.view', 'finance.post', 'reports.view',
       'documents.issue', 'approvals.review'
     ]
@@ -65,12 +75,12 @@ export const SYSTEM_ROLE_DEFINITIONS = Object.freeze([
     name: 'Inventory / Storekeeper',
     permissionCodes: [
       'inventory.view', 'inventory.adjust', 'inventory.transfer',
-      'inventory.receive', 'purchases.create', 'purchases.receive', 'sales.view'
+      'inventory.receive', 'purchases.create', 'purchases.receive', 'sales.view', 'sales.fulfill'
     ]
   },
   { code: 'viewer', name: 'Viewer', permissionCodes: VIEW_ONLY }
 ].map(role => Object.freeze({ ...role, permissionCodes: Object.freeze(role.permissionCodes) })));
 
 export const PERMISSION_CODES = Object.freeze(ALL);
-export const PERMISSION_CATALOG_VERSION = 3;
-export const SYSTEM_ROLE_TEMPLATE_VERSION = 3;
+export const PERMISSION_CATALOG_VERSION = 4;
+export const SYSTEM_ROLE_TEMPLATE_VERSION = 4;

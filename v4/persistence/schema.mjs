@@ -1,5 +1,5 @@
 export const V4_DATABASE_NAME = 'freeofis_v4';
-export const V4_DATABASE_VERSION = 4;
+export const V4_DATABASE_VERSION = 5;
 
 export const V4_STORES = Object.freeze({
   accounts: 'accounts',
@@ -25,7 +25,15 @@ export const V4_STORES = Object.freeze({
   goodsReceiptLines: 'goodsReceiptLines', supplierInvoices: 'supplierInvoices',
   supplierInvoiceLines: 'supplierInvoiceLines', supplierPayments: 'supplierPayments',
   supplierPaymentAllocations: 'supplierPaymentAllocations', purchaseReturns: 'purchaseReturns',
-  purchaseReturnLines: 'purchaseReturnLines'
+  purchaseReturnLines: 'purchaseReturnLines',
+  customers: 'customers', salesOrders: 'salesOrders', salesOrderLines: 'salesOrderLines',
+  salesFulfillments: 'salesFulfillments', salesFulfillmentLines: 'salesFulfillmentLines',
+  customerInvoices: 'customerInvoices', customerInvoiceLines: 'customerInvoiceLines',
+  customerPayments: 'customerPayments', customerPaymentAllocations: 'customerPaymentAllocations',
+  customerCreditNotes: 'customerCreditNotes', customerCreditNoteLines: 'customerCreditNoteLines',
+  salesReturns: 'salesReturns', salesReturnLines: 'salesReturnLines', customerRefunds: 'customerRefunds',
+  inventoryCostRecognitions: 'inventoryCostRecognitions', documentSequences: 'documentSequences',
+  idempotencyRecords: 'idempotencyRecords'
 });
 
 export const V4_STORE_DEFINITIONS = Object.freeze([
@@ -219,7 +227,26 @@ export const V4_STORE_DEFINITIONS = Object.freeze([
     ['supplierPaymentAllocations',[['byPaymentId','paymentId'],['byInvoiceId','invoiceId']]],
     ['purchaseReturns',[['bySupplierId','supplierId'],['byGoodsReceiptId','goodsReceiptId'],['byTransactionAt','transactionAt']]],
     ['purchaseReturnLines',[['byPurchaseReturnId','purchaseReturnId'],['byGoodsReceiptLineId','goodsReceiptLineId']]]
-  ].map(([name,indexes])=>({name:V4_STORES[name],options:{keyPath:'id'},indexes:indexes.map(([indexName,keyPath])=>({name:indexName,keyPath,options:{unique:false}}))}))
+  ].map(([name,indexes])=>({name:V4_STORES[name],options:{keyPath:'id'},indexes:indexes.map(([indexName,keyPath])=>({name:indexName,keyPath,options:{unique:false}}))})),
+  ...[
+    ['customers',[['byBusinessId','businessId'],['byBusinessAndCode',['businessId','customerCode']]]],
+    ['salesOrders',[['byBusinessId','businessId'],['byOperatingUnitId','operatingUnitId'],['byCustomerId','customerId'],['byTransactionAt','transactionAt']]],
+    ['salesOrderLines',[['bySalesOrderId','salesOrderId'],['byProductId','productId']]],
+    ['salesFulfillments',[['bySalesOrderId','salesOrderId'],['byBusinessId','businessId'],['byInventoryLocationId','inventoryLocationId']]],
+    ['salesFulfillmentLines',[['byFulfillmentId','salesFulfillmentId'],['bySalesOrderLineId','salesOrderLineId'],['byProductId','productId']]],
+    ['customerInvoices',[['byBusinessId','businessId'],['byCustomerId','customerId'],['bySalesOrderId','salesOrderId'],['byTransactionAt','transactionAt'],['byInvoiceNumber',['businessId','operatingUnitId','invoiceNumber']]]],
+    ['customerInvoiceLines',[['byInvoiceId','customerInvoiceId'],['byProductId','productId']]],
+    ['customerPayments',[['byBusinessId','businessId'],['byCustomerId','customerId'],['byTransactionAt','transactionAt'],['byReversalOfId','reversalOfId']]],
+    ['customerPaymentAllocations',[['byPaymentId','paymentId'],['byInvoiceId','invoiceId']]],
+    ['customerCreditNotes',[['byBusinessId','businessId'],['byCustomerId','customerId'],['byInvoiceId','customerInvoiceId'],['byCreditNoteNumber',['businessId','operatingUnitId','creditNoteNumber']]]],
+    ['customerCreditNoteLines',[['byCreditNoteId','customerCreditNoteId'],['byInvoiceLineId','customerInvoiceLineId']]],
+    ['salesReturns',[['byBusinessId','businessId'],['byCustomerId','customerId'],['byFulfillmentId','salesFulfillmentId'],['byReturnNumber',['businessId','operatingUnitId','returnNumber']]]],
+    ['salesReturnLines',[['byReturnId','salesReturnId'],['byFulfillmentLineId','salesFulfillmentLineId']]],
+    ['customerRefunds',[['byBusinessId','businessId'],['byCustomerId','customerId'],['byInvoiceId','customerInvoiceId'],['byRefundNumber',['businessId','operatingUnitId','refundNumber']]]],
+    ['inventoryCostRecognitions',[['byBusinessAndProduct',['businessId','productId']],['byMovementId','inventoryMovementId'],['byFulfillmentLineId','salesFulfillmentLineId']]],
+    ['documentSequences',[['byScope',['businessId','operatingUnitId','documentType','year']]]],
+    ['idempotencyRecords',[['byScopeAndKey',['businessId','commandType','idempotencyKey']]]]
+  ].map(([name,indexes])=>({name:V4_STORES[name],options:{keyPath:'id'},indexes:indexes.map(([indexName,keyPath])=>({name:indexName,keyPath,options:{unique:['byInvoiceNumber','byCreditNoteNumber','byReturnNumber','byRefundNumber','byScope','byScopeAndKey'].includes(indexName)}}))}))
 ]);
 
 function hasName(collection, name) {
