@@ -1,5 +1,5 @@
 export const V4_DATABASE_NAME = 'freeofis_v4';
-export const V4_DATABASE_VERSION = 3;
+export const V4_DATABASE_VERSION = 4;
 
 export const V4_STORES = Object.freeze({
   accounts: 'accounts',
@@ -19,7 +19,13 @@ export const V4_STORES = Object.freeze({
   inventoryLocations: 'inventoryLocations',
   inventoryMovements: 'inventoryMovements',
   inventoryCostLayers: 'inventoryCostLayers',
-  inventoryOwnerships: 'inventoryOwnerships'
+  inventoryOwnerships: 'inventoryOwnerships', suppliers: 'suppliers',
+  procurementAgreements: 'procurementAgreements', purchaseOrders: 'purchaseOrders',
+  purchaseOrderLines: 'purchaseOrderLines', goodsReceipts: 'goodsReceipts',
+  goodsReceiptLines: 'goodsReceiptLines', supplierInvoices: 'supplierInvoices',
+  supplierInvoiceLines: 'supplierInvoiceLines', supplierPayments: 'supplierPayments',
+  supplierPaymentAllocations: 'supplierPaymentAllocations', purchaseReturns: 'purchaseReturns',
+  purchaseReturnLines: 'purchaseReturnLines'
 });
 
 export const V4_STORE_DEFINITIONS = Object.freeze([
@@ -199,7 +205,21 @@ export const V4_STORE_DEFINITIONS = Object.freeze([
       { name: 'byBusinessId', keyPath: 'businessId', options: { unique: false } },
       { name: 'byType', keyPath: ['businessId', 'type'], options: { unique: false } }
     ]
-  }
+  },
+  ...[
+    ['suppliers',[['byBusinessId','businessId'],['byBusinessAndStatus',['businessId','status']]]],
+    ['procurementAgreements',[['bySupplierId','supplierId'],['byBusinessId','businessId']]],
+    ['purchaseOrders',[['bySupplierId','supplierId'],['byBusinessId','businessId'],['byOperatingUnitId','operatingUnitId'],['byTransactionAt','transactionAt']]],
+    ['purchaseOrderLines',[['byPurchaseOrderId','purchaseOrderId'],['byProductId','productId']]],
+    ['goodsReceipts',[['bySupplierId','supplierId'],['byBusinessId','businessId'],['byOperatingUnitId','operatingUnitId'],['byTransactionAt','transactionAt']]],
+    ['goodsReceiptLines',[['byGoodsReceiptId','goodsReceiptId'],['byProductId','productId']]],
+    ['supplierInvoices',[['bySupplierId','supplierId'],['byBusinessId','businessId'],['byStatus','status'],['byTransactionAt','transactionAt']]],
+    ['supplierInvoiceLines',[['bySupplierInvoiceId','supplierInvoiceId'],['byProductId','productId']]],
+    ['supplierPayments',[['bySupplierId','supplierId'],['byBusinessId','businessId'],['byTransactionAt','transactionAt']]],
+    ['supplierPaymentAllocations',[['byPaymentId','paymentId'],['byInvoiceId','invoiceId']]],
+    ['purchaseReturns',[['bySupplierId','supplierId'],['byGoodsReceiptId','goodsReceiptId'],['byTransactionAt','transactionAt']]],
+    ['purchaseReturnLines',[['byPurchaseReturnId','purchaseReturnId'],['byGoodsReceiptLineId','goodsReceiptLineId']]]
+  ].map(([name,indexes])=>({name:V4_STORES[name],options:{keyPath:'id'},indexes:indexes.map(([indexName,keyPath])=>({name:indexName,keyPath,options:{unique:false}}))}))
 ]);
 
 function hasName(collection, name) {

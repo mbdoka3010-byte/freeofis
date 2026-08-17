@@ -32,7 +32,7 @@ async function setup() {
 }
 globalThis.localStorage=Object.freeze({getItem(){throw Error('no V3 read')},setItem(){throw Error('no V3 write')},removeItem(){throw Error('no V3 write')},clear(){throw Error('no V3 write')}});
 
-await test('upgrades v2 to v3 while preserving every earlier store',()=>{const r=recorderV2(),a=r.stores.get('accounts');applyV4SchemaUpgrade(r.database,r.transaction,2);assert.equal(V4_DATABASE_VERSION,3);assert.equal(r.stores.get('accounts'),a);assert.equal(r.stores.size,18);});
+await test('upgrades v2 additively while preserving every earlier store',()=>{const r=recorderV2(),a=r.stores.get('accounts');applyV4SchemaUpgrade(r.database,r.transaction,2);assert.equal(V4_DATABASE_VERSION,4);assert.equal(r.stores.get('accounts'),a);assert.equal(r.stores.size,Object.values(V4_STORES).length);});
 await test('creates Product and allows duplicate names with distinct IDs',async()=>{const s=await setup();const p=await s.service.createProduct({businessId:s.owner.business.id,name:'Test Product'},context);assert.notEqual(p.id,s.product.id);});
 await test('supports multiple identifiers and rejects duplicate active identity',async()=>{const s=await setup();await s.service.addIdentifier({businessId:s.owner.business.id,productId:s.product.id,type:'barcode',value:'ABC'},context);await s.service.addIdentifier({businessId:s.owner.business.id,productId:s.product.id,type:'sku',value:'ABC'},context);await assert.rejects(s.service.addIdentifier({businessId:s.owner.business.id,productId:s.product.id,type:'barcode',value:'abc'},context),ScopeValidationError);});
 await test('creates InventoryLocation under an Operating Unit',async()=>{const s=await setup();assert.equal(s.location.operatingUnitId,s.owner.operatingUnit.id);});

@@ -92,7 +92,7 @@ globalThis.localStorage = Object.freeze({
 
 await test('defines the V4 IndexedDB name, version, and minimum stores', () => {
   assert.equal(V4_DATABASE_NAME, 'freeofis_v4');
-  assert.equal(V4_DATABASE_VERSION, 3);
+  assert.equal(V4_DATABASE_VERSION, 4);
   assert.deepEqual(V4_STORE_DEFINITIONS.map(definition => definition.name), Object.values(V4_STORES));
 });
 

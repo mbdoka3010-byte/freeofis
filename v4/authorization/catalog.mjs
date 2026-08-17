@@ -16,6 +16,11 @@ export const PERMISSION_CATALOG = Object.freeze([
   ['purchases.create', 'purchases', 'Create purchases'],
   ['purchases.receive', 'purchases', 'Receive purchases'],
   ['purchases.approve', 'purchases', 'Approve purchases'],
+  ['purchases.return', 'purchases', 'Return purchases'],
+  ['suppliers.view', 'suppliers', 'View suppliers'],
+  ['suppliers.manage', 'suppliers', 'Manage suppliers'],
+  ['supplier_payments.view', 'supplier_payments', 'View supplier payments'],
+  ['supplier_payments.record', 'supplier_payments', 'Record supplier payments'],
   ['finance.view', 'finance', 'View finance'],
   ['finance.post', 'finance', 'Post financial entries'],
   ['finance.adjust', 'finance', 'Adjust financial entries'],
@@ -67,5 +72,5 @@ export const SYSTEM_ROLE_DEFINITIONS = Object.freeze([
 ].map(role => Object.freeze({ ...role, permissionCodes: Object.freeze(role.permissionCodes) })));
 
 export const PERMISSION_CODES = Object.freeze(ALL);
-export const PERMISSION_CATALOG_VERSION = 2;
-export const SYSTEM_ROLE_TEMPLATE_VERSION = 2;
+export const PERMISSION_CATALOG_VERSION = 3;
+export const SYSTEM_ROLE_TEMPLATE_VERSION = 3;

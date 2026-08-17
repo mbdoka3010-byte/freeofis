@@ -105,7 +105,7 @@ globalThis.localStorage = Object.freeze({
 });
 
 await test('upgrades IndexedDB from v1 to v2 additively', () => {
-  assert.equal(V4_DATABASE_VERSION, 3);
+  assert.equal(V4_DATABASE_VERSION, 4);
   const recorder = schemaRecorderWithV1();
   const originalAccounts = recorder.stores.get('accounts');
   applyV4SchemaUpgrade(recorder.database, recorder.transaction, 1);
