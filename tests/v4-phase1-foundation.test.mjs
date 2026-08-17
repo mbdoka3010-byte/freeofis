@@ -92,18 +92,15 @@ globalThis.localStorage = Object.freeze({
 
 await test('defines the V4 IndexedDB name, version, and minimum stores', () => {
   assert.equal(V4_DATABASE_NAME, 'freeofis_v4');
-  assert.equal(V4_DATABASE_VERSION, 1);
-  assert.deepEqual(
-    V4_STORE_DEFINITIONS.map(definition => definition.name),
-    Object.values(V4_STORES)
-  );
+  assert.equal(V4_DATABASE_VERSION, 2);
+  assert.deepEqual(V4_STORE_DEFINITIONS.map(definition => definition.name), Object.values(V4_STORES));
 });
 
 await test('creates the IndexedDB schema and justified indexes idempotently', () => {
   const recorder = schemaRecorder();
   applyV4SchemaUpgrade(recorder.database, recorder.transaction);
   applyV4SchemaUpgrade(recorder.database, recorder.transaction);
-  assert.equal(recorder.stores.size, 6);
+  assert.equal(recorder.stores.size, Object.values(V4_STORES).length);
   assert.equal(recorder.stores.get('legacyMappings').indexes.get('bySourceIdentity').options.unique, true);
   assert.equal(recorder.stores.get('businesses').indexes.has('byAccountId'), true);
   assert.equal(recorder.stores.get('operatingUnits').indexes.has('byBusinessId'), true);

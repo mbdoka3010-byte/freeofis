@@ -111,3 +111,91 @@ export function createBusinessEvent(input = {}, context = {}) {
     metadata: input.metadata ?? {}
   };
 }
+
+export function createUser(input = {}, context = {}) {
+  return {
+    ...commonFields(input, context),
+    displayName: requiredText(input.displayName, 'User displayName'),
+    email: input.email ? String(input.email).trim() : null,
+    phone: input.phone ? String(input.phone).trim() : null
+  };
+}
+
+export function createBusinessMembership(input = {}, context = {}) {
+  return {
+    ...commonFields(input, context),
+    userId: requiredText(input.userId, 'BusinessMembership userId'),
+    businessId: requiredText(input.businessId, 'BusinessMembership businessId')
+  };
+}
+
+export function createRole(input = {}, context = {}) {
+  return {
+    ...commonFields(input, context),
+    businessId: requiredText(input.businessId, 'Role businessId'),
+    code: requiredText(input.code, 'Role code'),
+    name: requiredText(input.name, 'Role name'),
+    kind: input.kind === 'custom' ? 'custom' : 'system',
+    permissionCodes: [...new Set(input.permissionCodes || [])].sort()
+  };
+}
+
+export function createPermission(input = {}, context = {}) {
+  const timestamp = input.createdAt || nowTimestamp(context.clock);
+  return {
+    code: requiredText(input.code, 'Permission code'),
+    module: requiredText(input.module, 'Permission module'),
+    description: requiredText(input.description, 'Permission description'),
+    status: input.status || STATUS_ACTIVE,
+    createdAt: timestamp,
+    updatedAt: input.updatedAt || timestamp,
+    metadata: input.metadata ?? {}
+  };
+}
+
+export function createRoleAssignment(input = {}, context = {}) {
+  const scopeType = input.scopeType || 'business';
+  if (!['business', 'operating_units'].includes(scopeType)) {
+    throw new TypeError('RoleAssignment scopeType is invalid.');
+  }
+  const operatingUnitIds = [...new Set(input.operatingUnitIds || [])];
+  if (scopeType === 'business' && operatingUnitIds.length) {
+    throw new TypeError('Business-wide assignments cannot include Operating Units.');
+  }
+  if (scopeType === 'operating_units' && !operatingUnitIds.length) {
+    throw new TypeError('Operating-unit assignments require at least one unit.');
+  }
+  return {
+    ...commonFields(input, context),
+    membershipId: requiredText(input.membershipId, 'RoleAssignment membershipId'),
+    roleId: requiredText(input.roleId, 'RoleAssignment roleId'),
+    businessId: requiredText(input.businessId, 'RoleAssignment businessId'),
+    scopeType,
+    operatingUnitIds
+  };
+}
+
+export function createApproval(input = {}, context = {}) {
+  const createdAt = input.createdAt || nowTimestamp(context.clock);
+  return {
+    id: input.id || createUuidV7(context.uuidOptions),
+    accountId: requiredText(input.accountId, 'Approval accountId'),
+    businessId: requiredText(input.businessId, 'Approval businessId'),
+    operatingUnitId: input.operatingUnitId ?? null,
+    actionType: requiredText(input.actionType, 'Approval actionType'),
+    requiredPermission: requiredText(input.requiredPermission, 'Approval requiredPermission'),
+    entityType: requiredText(input.entityType, 'Approval entityType'),
+    entityId: requiredText(input.entityId, 'Approval entityId'),
+    requestedByUserId: requiredText(input.requestedByUserId, 'Approval requestedByUserId'),
+    status: input.status || 'pending',
+    requestedAt: input.requestedAt || createdAt,
+    decidedAt: input.decidedAt ?? null,
+    decidedByUserId: input.decidedByUserId ?? null,
+    reason: input.reason ?? null,
+    notes: input.notes ?? null,
+    createdAt,
+    updatedAt: input.updatedAt || createdAt,
+    provenance: input.provenance ?? null,
+    metadata: input.metadata ?? {}
+  };
+}

@@ -1,5 +1,5 @@
 export const V4_DATABASE_NAME = 'freeofis_v4';
-export const V4_DATABASE_VERSION = 1;
+export const V4_DATABASE_VERSION = 2;
 
 export const V4_STORES = Object.freeze({
   accounts: 'accounts',
@@ -7,7 +7,13 @@ export const V4_STORES = Object.freeze({
   operatingUnits: 'operatingUnits',
   legacyMappings: 'legacyMappings',
   businessEvents: 'businessEvents',
-  meta: 'meta'
+  meta: 'meta',
+  users: 'users',
+  businessMemberships: 'businessMemberships',
+  roles: 'roles',
+  permissions: 'permissions',
+  roleAssignments: 'roleAssignments',
+  approvals: 'approvals'
 });
 
 export const V4_STORE_DEFINITIONS = Object.freeze([
@@ -83,6 +89,69 @@ export const V4_STORE_DEFINITIONS = Object.freeze([
     name: V4_STORES.meta,
     options: { keyPath: 'key' },
     indexes: []
+  },
+  {
+    name: V4_STORES.users,
+    options: { keyPath: 'id' },
+    indexes: [
+      { name: 'byStatus', keyPath: 'status', options: { unique: false } }
+    ]
+  },
+  {
+    name: V4_STORES.businessMemberships,
+    options: { keyPath: 'id' },
+    indexes: [
+      { name: 'byUserId', keyPath: 'userId', options: { unique: false } },
+      { name: 'byBusinessId', keyPath: 'businessId', options: { unique: false } },
+      {
+        name: 'byUserAndBusiness',
+        keyPath: ['userId', 'businessId'],
+        options: { unique: true }
+      }
+    ]
+  },
+  {
+    name: V4_STORES.roles,
+    options: { keyPath: 'id' },
+    indexes: [
+      { name: 'byBusinessId', keyPath: 'businessId', options: { unique: false } },
+      {
+        name: 'byBusinessAndCode',
+        keyPath: ['businessId', 'code'],
+        options: { unique: true }
+      }
+    ]
+  },
+  {
+    name: V4_STORES.permissions,
+    options: { keyPath: 'code' },
+    indexes: [
+      { name: 'byModule', keyPath: 'module', options: { unique: false } },
+      { name: 'byStatus', keyPath: 'status', options: { unique: false } }
+    ]
+  },
+  {
+    name: V4_STORES.roleAssignments,
+    options: { keyPath: 'id' },
+    indexes: [
+      { name: 'byMembershipId', keyPath: 'membershipId', options: { unique: false } },
+      { name: 'byRoleId', keyPath: 'roleId', options: { unique: false } },
+      { name: 'byBusinessId', keyPath: 'businessId', options: { unique: false } }
+    ]
+  },
+  {
+    name: V4_STORES.approvals,
+    options: { keyPath: 'id' },
+    indexes: [
+      { name: 'byBusinessId', keyPath: 'businessId', options: { unique: false } },
+      {
+        name: 'byBusinessAndStatus',
+        keyPath: ['businessId', 'status'],
+        options: { unique: false }
+      },
+      { name: 'byOperatingUnitId', keyPath: 'operatingUnitId', options: { unique: false } },
+      { name: 'byRequestedByUserId', keyPath: 'requestedByUserId', options: { unique: false } }
+    ]
   }
 ]);
 

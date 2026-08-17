@@ -40,7 +40,10 @@ function createTransactionContext(transaction) {
   });
 }
 
-export function openV4Database(indexedDbFactory = globalThis.indexedDB) {
+export function openV4Database(
+  indexedDbFactory = globalThis.indexedDB,
+  options = {}
+) {
   if (!indexedDbFactory) {
     return Promise.reject(new V4PersistenceError(
       'IndexedDB is unavailable in this environment.',
@@ -49,7 +52,10 @@ export function openV4Database(indexedDbFactory = globalThis.indexedDB) {
   }
 
   return new Promise((resolve, reject) => {
-    const request = indexedDbFactory.open(V4_DATABASE_NAME, V4_DATABASE_VERSION);
+    const request = indexedDbFactory.open(
+      options.databaseName || V4_DATABASE_NAME,
+      options.databaseVersion || V4_DATABASE_VERSION
+    );
 
     request.onupgradeneeded = event => {
       try {
@@ -85,8 +91,8 @@ export class IndexedDbPersistence {
     this.database = database;
   }
 
-  static async open(indexedDbFactory) {
-    return new IndexedDbPersistence(await openV4Database(indexedDbFactory));
+  static async open(indexedDbFactory, options) {
+    return new IndexedDbPersistence(await openV4Database(indexedDbFactory, options));
   }
 
   close() {

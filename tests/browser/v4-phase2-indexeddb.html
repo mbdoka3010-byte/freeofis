@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Free Ofis V4 Phase 2 IndexedDB Test Harness</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 60rem; }
+    button { padding: .7rem 1rem; }
+    pre { background: #111; color: #eee; padding: 1rem; white-space: pre-wrap; }
+    .warning { color: #8a3b00; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>V4 Phase 2 IndexedDB Test Harness</h1>
+  <p class="warning">Development test only. This page is not part of the Free Ofis production UI.</p>
+  <p>It uses the isolated database <code>freeofis_v4_phase2_test</code> and never reads or writes V3 localStorage.</p>
+  <button id="run" type="button">Run IndexedDB integration checks</button>
+  <pre id="output">Not run.</pre>
+  <script type="module" src="./v4-phase2-indexeddb.mjs"></script>
+</body>
+</html>
