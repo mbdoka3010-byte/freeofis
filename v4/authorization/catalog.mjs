@@ -12,6 +12,7 @@ export const PERMISSION_CATALOG = Object.freeze([
   ['inventory.view', 'inventory', 'View inventory'],
   ['inventory.adjust', 'inventory', 'Adjust inventory'],
   ['inventory.transfer', 'inventory', 'Transfer inventory'],
+  ['inventory.receive', 'inventory', 'Receive inventory'],
   ['purchases.create', 'purchases', 'Create purchases'],
   ['purchases.receive', 'purchases', 'Receive purchases'],
   ['purchases.approve', 'purchases', 'Approve purchases'],
@@ -59,10 +60,12 @@ export const SYSTEM_ROLE_DEFINITIONS = Object.freeze([
     name: 'Inventory / Storekeeper',
     permissionCodes: [
       'inventory.view', 'inventory.adjust', 'inventory.transfer',
-      'purchases.create', 'purchases.receive', 'sales.view'
+      'inventory.receive', 'purchases.create', 'purchases.receive', 'sales.view'
     ]
   },
   { code: 'viewer', name: 'Viewer', permissionCodes: VIEW_ONLY }
 ].map(role => Object.freeze({ ...role, permissionCodes: Object.freeze(role.permissionCodes) })));
 
 export const PERMISSION_CODES = Object.freeze(ALL);
+export const PERMISSION_CATALOG_VERSION = 2;
+export const SYSTEM_ROLE_TEMPLATE_VERSION = 2;

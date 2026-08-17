@@ -35,10 +35,16 @@ export class MemoryV4Persistence {
     const definition = this.definitions.get(storeName);
     const store = this.#store(data, storeName);
     for (const index of definition.indexes.filter(candidate => candidate.options?.unique)) {
-      const candidate = keyToken(valueAtKeyPath(record, index.keyPath));
+      const candidateValue = valueAtKeyPath(record, index.keyPath);
+      if (
+        candidateValue === undefined ||
+        (Array.isArray(candidateValue) && candidateValue.some(value => value === undefined))
+      ) continue;
+      const candidate = keyToken(candidateValue);
       for (const [key, existing] of store) {
         if (key === replacingKey) continue;
-        if (keyToken(valueAtKeyPath(existing, index.keyPath)) === candidate) {
+        const existingValue = valueAtKeyPath(existing, index.keyPath);
+        if (existingValue !== undefined && keyToken(existingValue) === candidate) {
           throw new Error(`Unique index violation: ${storeName}.${index.name}`);
         }
       }

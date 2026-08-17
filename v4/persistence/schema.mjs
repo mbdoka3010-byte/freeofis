@@ -1,5 +1,5 @@
 export const V4_DATABASE_NAME = 'freeofis_v4';
-export const V4_DATABASE_VERSION = 2;
+export const V4_DATABASE_VERSION = 3;
 
 export const V4_STORES = Object.freeze({
   accounts: 'accounts',
@@ -13,7 +13,13 @@ export const V4_STORES = Object.freeze({
   roles: 'roles',
   permissions: 'permissions',
   roleAssignments: 'roleAssignments',
-  approvals: 'approvals'
+  approvals: 'approvals',
+  products: 'products',
+  productIdentifiers: 'productIdentifiers',
+  inventoryLocations: 'inventoryLocations',
+  inventoryMovements: 'inventoryMovements',
+  inventoryCostLayers: 'inventoryCostLayers',
+  inventoryOwnerships: 'inventoryOwnerships'
 });
 
 export const V4_STORE_DEFINITIONS = Object.freeze([
@@ -151,6 +157,47 @@ export const V4_STORE_DEFINITIONS = Object.freeze([
       },
       { name: 'byOperatingUnitId', keyPath: 'operatingUnitId', options: { unique: false } },
       { name: 'byRequestedByUserId', keyPath: 'requestedByUserId', options: { unique: false } }
+    ]
+  },
+  {
+    name: V4_STORES.products, options: { keyPath: 'id' }, indexes: [
+      { name: 'byBusinessId', keyPath: 'businessId', options: { unique: false } },
+      { name: 'byBusinessAndStatus', keyPath: ['businessId', 'status'], options: { unique: false } }
+    ]
+  },
+  {
+    name: V4_STORES.productIdentifiers, options: { keyPath: 'id' }, indexes: [
+      { name: 'byProductId', keyPath: 'productId', options: { unique: false } },
+      { name: 'byBusinessId', keyPath: 'businessId', options: { unique: false } },
+      { name: 'byIdentity', keyPath: ['businessId', 'type', 'normalizedValue'], options: { unique: false } }
+    ]
+  },
+  {
+    name: V4_STORES.inventoryLocations, options: { keyPath: 'id' }, indexes: [
+      { name: 'byBusinessId', keyPath: 'businessId', options: { unique: false } },
+      { name: 'byOperatingUnitId', keyPath: 'operatingUnitId', options: { unique: false } }
+    ]
+  },
+  {
+    name: V4_STORES.inventoryMovements, options: { keyPath: 'id' }, indexes: [
+      { name: 'byBusinessId', keyPath: 'businessId', options: { unique: false } },
+      { name: 'byProductId', keyPath: 'productId', options: { unique: false } },
+      { name: 'byLocationId', keyPath: 'inventoryLocationId', options: { unique: false } },
+      { name: 'byOperatingUnitId', keyPath: 'operatingUnitId', options: { unique: false } },
+      { name: 'byTransferId', keyPath: 'transferId', options: { unique: false } },
+      { name: 'byReversalOfId', keyPath: 'reversalOfId', options: { unique: true } }
+    ]
+  },
+  {
+    name: V4_STORES.inventoryCostLayers, options: { keyPath: 'id' }, indexes: [
+      { name: 'byBusinessAndProduct', keyPath: ['businessId', 'productId'], options: { unique: false } },
+      { name: 'byMovementId', keyPath: 'movementId', options: { unique: true } }
+    ]
+  },
+  {
+    name: V4_STORES.inventoryOwnerships, options: { keyPath: 'id' }, indexes: [
+      { name: 'byBusinessId', keyPath: 'businessId', options: { unique: false } },
+      { name: 'byType', keyPath: ['businessId', 'type'], options: { unique: false } }
     ]
   }
 ]);

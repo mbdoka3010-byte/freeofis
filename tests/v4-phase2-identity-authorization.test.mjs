@@ -105,7 +105,7 @@ globalThis.localStorage = Object.freeze({
 });
 
 await test('upgrades IndexedDB from v1 to v2 additively', () => {
-  assert.equal(V4_DATABASE_VERSION, 2);
+  assert.equal(V4_DATABASE_VERSION, 3);
   const recorder = schemaRecorderWithV1();
   const originalAccounts = recorder.stores.get('accounts');
   applyV4SchemaUpgrade(recorder.database, recorder.transaction, 1);
@@ -115,7 +115,7 @@ await test('upgrades IndexedDB from v1 to v2 additively', () => {
       .filter(name => !recorder.stores.has(name)),
     []
   );
-  assert.equal(recorder.stores.size, 12);
+  assert.equal(recorder.stores.size, Object.values(V4_STORES).length);
 });
 
 await test('creates a User without requiring email or phone', async () => {
