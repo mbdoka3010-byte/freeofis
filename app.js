@@ -38,6 +38,56 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  /*
+     localStorage has no native transaction support. For operations
+     that must update several related collections, save every value as
+     one checked batch and restore any keys already written if a later
+     write fails. This reduces the risk of a partially persisted sale,
+     cancellation, payment allocation, migration, or import.
+  */
+  const saveBatch = entries => {
+    const previous = [];
+
+    try {
+      entries.forEach(entry => {
+        previous.push({
+          key: entry.key,
+          value: localStorage.getItem(entry.key)
+        });
+      });
+
+      entries.forEach(entry => {
+        localStorage.setItem(
+          entry.key,
+          entry.raw
+            ? String(entry.value)
+            : JSON.stringify(entry.value)
+        );
+      });
+      return true;
+    } catch (e) {
+      // Best-effort restoration of every affected key, including the
+      // key whose write failed in case the browser partially accepted it.
+      previous.forEach(entry => {
+        try {
+          if (entry.value === null) {
+            localStorage.removeItem(entry.key);
+          } else {
+            localStorage.setItem(entry.key, entry.value);
+          }
+        } catch (restoreError) {
+          console.error('Free Ofis storage restore error:', restoreError);
+        }
+      });
+
+      console.error('Free Ofis storage error:', e);
+      alert('Free Ofis could not save this change. Existing saved data was restored. Please check available browser storage.');
+      return false;
+    }
+  };
+
+  const cloneData = value => JSON.parse(JSON.stringify(value));
+
   const uid = prefix =>
     prefix +
     '-' +
@@ -397,22 +447,25 @@ document.addEventListener('DOMContentLoaded', () => {
       syncSalePaymentFields(s);
     });
 
-    localStorage.setItem(
-      'freeofis_data_version',
-      String(DATA_VERSION)
-    );
     migrationChanged = true;
   }
 
   // Persist only when normalisation or migration actually changed data.
   // (Normalisation above may have added missing ids / defaults.)
   if (migrationChanged || dataVersion < DATA_VERSION) {
-    save(K.inv, inv);
-    save(K.cus, cus);
-    save(K.sales, sales);
-    save(K.pay, pay);
-    save(K.exp, exp);
-    save(K.biz, biz);
+    saveBatch([
+      { key: K.inv, value: inv },
+      { key: K.cus, value: cus },
+      { key: K.sales, value: sales },
+      { key: K.pay, value: pay },
+      { key: K.exp, value: exp },
+      { key: K.biz, value: biz },
+      {
+        key: 'freeofis_data_version',
+        value: DATA_VERSION,
+        raw: true
+      }
+    ]);
   }
 
   /* =========================================================
@@ -829,6 +882,69 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* =========================================================
+     NON-DESTRUCTIVE DATA INTEGRITY CHECKS
+     ========================================================= */
+
+  function integrityIssues() {
+    const issues = [];
+    const customerIds = new Set(cus.map(c => c.id));
+    const inventoryIds = new Set(inv.map(x => x.id));
+    const saleIds = new Set(sales.map(s => s.id));
+
+    sales.forEach(s => {
+      if (s.customerId && !customerIds.has(s.customerId)) {
+        issues.push(
+          `Sale ${s.id || '(missing ID)'} references missing customer ${s.customerId}.`
+        );
+      }
+
+      (s.items || []).forEach(i => {
+        if (i.productId && !inventoryIds.has(i.productId)) {
+          issues.push(
+            `Sale ${s.id || '(missing ID)'} item ${i.name || '(unnamed item)'} references missing inventory item ${i.productId}.`
+          );
+        }
+      });
+    });
+
+    pay.forEach(p => {
+      if (p.customerId && !customerIds.has(p.customerId)) {
+        issues.push(
+          `Payment ${p.id || '(missing ID)'} references missing customer ${p.customerId}.`
+        );
+      }
+
+      if (p.saleId && !saleIds.has(p.saleId)) {
+        issues.push(
+          `Payment ${p.id || '(missing ID)'} references missing sale ${p.saleId}.`
+        );
+      }
+    });
+
+    return issues;
+  }
+
+  function showIntegrityReport() {
+    const issues = integrityIssues();
+
+    modal(`
+      <h2>Data Integrity Check</h2>
+      <p>
+        ${
+          issues.length
+            ? 'The records below were not changed. Review them before making any correction.'
+            : 'No missing customer, inventory, or sale references were found.'
+        }
+      </p>
+      ${
+        issues.length
+          ? `<ul>${issues.map(issue => `<li>${esc(issue)}</li>`).join('')}</ul>`
+          : ''
+      }
+    `);
+  }
+
+  /* =========================================================
      PAYMENT SYSTEM
      ========================================================= */
 
@@ -934,19 +1050,27 @@ document.addEventListener('DOMContentLoaded', () => {
       status: 'completed'
     };
 
-    pay.push(paymentRecord);
+    const previousPayments = cloneData(pay);
+    const previousSales = saleId
+      ? cloneData(sales)
+      : null;
 
-    if (!save(K.pay, pay)) {
-      pay.pop();
-      return false;
-    }
+    pay.push(paymentRecord);
 
     if (saleId) {
       const s = sales.find(x => x.id === saleId);
       if (s) {
         syncSalePaymentFields(s);
-        save(K.sales, sales);
       }
+    }
+
+    if (!saveBatch([
+      { key: K.pay, value: pay },
+      ...(saleId ? [{ key: K.sales, value: sales }] : [])
+    ])) {
+      pay = previousPayments;
+      if (previousSales) sales = previousSales;
+      return false;
     }
 
     return true;
@@ -971,17 +1095,26 @@ document.addEventListener('DOMContentLoaded', () => {
       return false;
     }
 
+    const previousPayments = cloneData(pay);
+    const previousSales = cloneData(sales);
+
     p.status = 'cancelled';
     p.cancelledAt = localDateTime();
-
-    save(K.pay, pay);
 
     if (p.saleId) {
       const s = sales.find(x => x.id === p.saleId);
       if (s) {
         syncSalePaymentFields(s);
-        save(K.sales, sales);
       }
+    }
+
+    if (!saveBatch([
+      { key: K.pay, value: pay },
+      { key: K.sales, value: sales }
+    ])) {
+      pay = previousPayments;
+      sales = previousSales;
+      return false;
     }
 
     renderSales();
@@ -1163,7 +1296,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         <br>
 
-                        <button data-ie="${x.id}">
+                        <button type="button" data-ie="${x.id}">
                           Edit
                         </button>
 
@@ -1280,6 +1413,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
       </form>
     `;
+
+    if (old) {
+      a.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+    }
+
+    $('#in').focus();
 
     $('#invf').onsubmit = e => {
       e.preventDefault();
@@ -1423,6 +1565,11 @@ document.addEventListener('DOMContentLoaded', () => {
           placeholder="Search customer, order or item"
         >
 
+        <label>
+          <input id="showcancelled" type="checkbox">
+          Show cancelled sales
+        </label>
+
         <div id="sl"></div>
 
       </div>
@@ -1431,6 +1578,8 @@ document.addEventListener('DOMContentLoaded', () => {
     $('#neworder').onclick = orderForm;
 
     $('#sq').oninput = renderSaleList;
+
+    $('#showcancelled').onchange = renderSaleList;
 
     renderSaleList();
   }
@@ -1797,6 +1946,10 @@ document.addEventListener('DOMContentLoaded', () => {
       status: 'completed'
     };
 
+    const previousInventory = cloneData(inv);
+    const previousSales = cloneData(sales);
+    const previousPayments = cloneData(pay);
+
     /* Reduce inventory */
     z.out.forEach(x => {
       const p =
@@ -1832,9 +1985,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     syncSalePaymentFields(s);
 
-    save(K.sales, sales);
-    save(K.inv, inv);
-    save(K.pay, pay);
+    if (!saveBatch([
+      { key: K.sales, value: sales },
+      { key: K.inv, value: inv },
+      { key: K.pay, value: pay }
+    ])) {
+      inv = previousInventory;
+      sales = previousSales;
+      pay = previousPayments;
+      return;
+    }
 
     renderSales();
     renderInv();
@@ -1855,7 +2015,7 @@ Balance: ${money(s.balance)}`
 
   /* =========================================================
      SALES LIST
-     CUSTOMER-FIRST VIEW
+     DATE HIERARCHY VIEW
      ========================================================= */
 
   function renderSaleList() {
@@ -1868,9 +2028,22 @@ Balance: ${money(s.balance)}`
         .trim()
         .toLowerCase();
 
+    const showCancelled =
+      $('#showcancelled')?.checked || false;
+
+    const customerLabel = s => {
+      if (!s.customerId) return 'Walk-in Customer';
+
+      const c = customer(s.customerId);
+      return c
+        ? c.name
+        : `Unknown/Archived Customer (${s.customerId})`;
+    };
+
     let list = sales
       .filter(
         s =>
+          showCancelled ||
           s.status !== 'cancelled'
       )
       .slice()
@@ -1887,236 +2060,191 @@ Balance: ${money(s.balance)}`
           )
       );
 
-    /*
-       Group sales by customer.
-
-       This prevents the Sales & Orders page from becoming a
-       long rough list containing many repeated customer names.
-    */
-
-    const groups = {};
-
-    list.forEach(s => {
-      const cid =
-        s.customerId || '__walkin__';
-
-      if (!groups[cid]) {
-        groups[cid] = [];
-      }
-
-      groups[cid].push(s);
-    });
-
-    let entries = Object.entries(
-      groups
-    );
-
     if (q) {
-      entries = entries.filter(
-        ([cid, arr]) => {
-          const c =
-            customer(cid);
-
-          const customerName =
-            c?.name ||
-            'Walk-in Customer';
-
-          return (
-            customerName
+      list = list.filter(
+        s =>
+          customerLabel(s)
+            .toLowerCase()
+            .includes(q) ||
+          s.id
+            .toLowerCase()
+            .includes(q) ||
+          (s.items || []).some(i =>
+            String(i.name || '')
               .toLowerCase()
-              .includes(q) ||
-            arr.some(
-              s =>
-                s.id
-                  .toLowerCase()
-                  .includes(q) ||
-                s.items.some(i =>
-                  i.name
-                    .toLowerCase()
-                    .includes(q)
-                )
-            )
-          );
-        }
+              .includes(q)
+          )
       );
     }
 
-    if (!entries.length) {
+    if (!list.length) {
       r.innerHTML =
-        '<p>No customers/orders found.</p>';
+        '<p>No sales/orders found.</p>';
 
       return;
     }
 
-    r.innerHTML = entries
-      .map(([cid, arr]) => {
-        const c =
-          customer(cid);
+    const groups = {};
 
-        const name =
-          c?.name ||
-          'Walk-in Customer';
+    list.forEach(s => {
+      const date = transactionDate(
+        s.transactionAt || s.date
+      );
+      const parts = String(date).split('-');
+      const year = parts[0] || 'Unknown year';
+      const month = parts[1] || 'Unknown month';
 
-        const total =
-          arr.reduce(
-            (n, s) =>
-              n + Number(s.total || 0),
-            0
+      groups[year] ||= {};
+      groups[year][month] ||= {};
+      groups[year][month][date] ||= [];
+      groups[year][month][date].push(s);
+    });
+
+    const monthName = (year, month) => {
+      const date = new Date(
+        `${year}-${month || '01'}-01T00:00:00`
+      );
+
+      return Number.isNaN(date.getTime())
+        ? month
+        : date.toLocaleDateString(
+            'en-NG',
+            { month: 'long' }
           );
+    };
 
-        const outstanding =
-          c
-            ? balance(cid)
-            : arr.reduce(
-                (n, s) =>
-                  n +
-                  saleBalance(s),
-                0
-              );
+    const dayName = date => {
+      const d = new Date(`${date}T00:00:00`);
 
-        return `
-          <div class="panel">
+      return Number.isNaN(d.getTime())
+        ? date
+        : d.toLocaleDateString(
+            'en-NG',
+            { day: 'numeric', month: 'long' }
+          );
+    };
 
-            <h3>
-              <button
-                type="button"
-                data-customer="${esc(cid)}"
-                style="
-                  background:none;
-                  border:0;
-                  padding:0;
-                  font-size:inherit;
-                  font-weight:bold;
-                  cursor:pointer;
-                  text-align:left;
-                "
-              >
-                ${esc(name)}
-              </button>
-            </h3>
+    const saleCard = s => {
+      const c = s.customerId
+        ? customer(s.customerId)
+        : null;
+      const cancelled = s.status === 'cancelled';
 
-            <p>
-              Orders:
-              <b>${arr.length}</b>
-            </p>
+      return `
+        <div
+          style="
+            padding:8px 0;
+            border-bottom:1px solid #ddd;
+          "
+        >
+          <b>${esc(s.id)}</b>
+          ${cancelled ? ' <em>(cancelled)</em>' : ''}
+          <br>
 
-            <p>
-              Total purchases:
-              <b>${money(total)}</b>
-            </p>
+          ${formatDateTime(s.transactionAt || s.date)}<br>
 
-            <p>
-              Outstanding:
-              <b>${money(outstanding)}</b>
-            </p>
+          Customer:
+          ${
+            c
+              ? `<button type="button" data-customer="${esc(s.customerId)}">${esc(c.name)}</button>`
+              : esc(customerLabel(s))
+          }
+          <br>
 
-            <button
-              data-customer="${esc(cid)}"
-            >
-              Open Customer
-            </button>
+          ${(s.items || [])
+            .map(i => `${esc(i.name)} × ${i.quantity}`)
+            .join(', ')}
+          <br>
 
-            <button
-              data-statement="${esc(cid)}"
-            >
-              Statement
-            </button>
+          Total: ${money(s.total)}
+          |
+          Paid: ${money(salePaid(s))}
+          |
+          Balance: <b>${money(saleBalance(s))}</b>
+          <br>
 
-            ${
-              outstanding > 0
-                ? `
-                  <button
-                    data-payment="${esc(cid)}"
-                  >
-                    Record Payment
-                  </button>
-                `
-                : ''
-            }
+          <button data-r="${esc(s.id)}">Receipt</button>
 
-            <hr>
+          ${
+            !cancelled && saleBalance(s)
+              ? `<button data-p="${esc(s.id)}">Payment</button>`
+              : ''
+          }
 
-            ${arr
-              .map(
-                s => `
-                  <div
-                    style="
-                      padding:8px 0;
-                      border-bottom:1px solid #ddd;
-                    "
-                  >
+          ${
+            !cancelled
+              ? `<button data-c="${esc(s.id)}">Cancel</button>`
+              : ''
+          }
 
-                    <b>${esc(s.id)}</b><br>
+          ${
+            c
+              ? `
+                <button data-statement="${esc(s.customerId)}">Statement</button>
+                ${
+                  balance(s.customerId) > 0
+                    ? `<button data-payment="${esc(s.customerId)}">Record Customer Payment</button>`
+                    : ''
+                }
+              `
+              : ''
+          }
 
-                    ${formatDateTime(
-                      s.transactionAt ||
-                        s.date
-                    )}<br>
+          ${
+            cancelled && s.cancelledAt
+              ? `<br>Cancelled: ${formatDateTime(s.cancelledAt)}`
+              : ''
+          }
+        </div>
+      `;
+    };
 
-                    ${s.items
-                      .map(
-                        i =>
-                          `${esc(
-                            i.name
-                          )} × ${
-                            i.quantity
-                          }`
-                      )
-                      .join(', ')}
+    r.innerHTML = Object.keys(groups)
+      .sort((a, b) => b.localeCompare(a))
+      .map(year => `
+        <details open class="panel">
+          <summary><b>${esc(year)}</b></summary>
 
-                    <br>
+          ${Object.keys(groups[year])
+            .sort((a, b) => b.localeCompare(a))
+            .map(month => `
+              <details open style="margin:12px 0 0 16px;">
+                <summary><b>${esc(monthName(year, month))}</b></summary>
 
-                    Total:
-                    ${money(s.total)}
-                    |
-                    Paid:
-                    ${money(
-                      salePaid(s)
-                    )}
-                    |
-                    Balance:
-                    <b>
-                      ${money(
-                        saleBalance(s)
-                      )}
-                    </b>
+                ${Object.keys(groups[year][month])
+                  .sort((a, b) => b.localeCompare(a))
+                  .map(date => {
+                    const daySales = groups[year][month][date];
+                    const activeDaySales = daySales.filter(
+                      s => s.status !== 'cancelled'
+                    );
+                    const dayTotal = activeDaySales.reduce(
+                      (n, s) => n + Number(s.total || 0),
+                      0
+                    );
+                    const cancelledCount =
+                      daySales.length - activeDaySales.length;
 
-                    <br>
-
-                    <button
-                      data-r="${esc(s.id)}"
-                    >
-                      Receipt
-                    </button>
-
-                    ${
-                      saleBalance(s)
-                        ? `
-                          <button
-                            data-p="${esc(
-                              s.id
-                            )}"
-                          >
-                            Payment
-                          </button>
-                        `
-                        : ''
-                    }
-
-                    <button
-                      data-c="${esc(s.id)}"
-                    >
-                      Cancel
-                    </button>
-
-                  </div>
-                `
-              )
-              .join('')}
-
-          </div>
-        `;
-      })
+                    return `
+                      <details open style="margin:12px 0 0 16px;">
+                        <summary>
+                          <b>${esc(dayName(date))}</b>
+                          — ${activeDaySales.length} active order${activeDaySales.length === 1 ? '' : 's'}
+                          — ${money(dayTotal)}
+                          ${cancelledCount ? ` — ${cancelledCount} cancelled` : ''}
+                        </summary>
+                        <div style="margin-left:16px;">
+                          ${daySales.map(saleCard).join('')}
+                        </div>
+                      </details>
+                    `;
+                  })
+                  .join('')}
+              </details>
+            `)
+            .join('')}
+        </details>
+      `)
       .join('');
 
     $$('[data-customer]', r).forEach(
@@ -2270,10 +2398,6 @@ Payment amount:`
       );
     }
 
-    syncSalePaymentFields(s);
-
-    save(K.sales, sales);
-
     renderSales();
     renderCredit();
     renderCus();
@@ -2316,6 +2440,10 @@ ${money(saleBalance(s))}`
       return;
     }
 
+    const previousInventory = cloneData(inv);
+    const previousSales = cloneData(sales);
+    const previousPayments = cloneData(pay);
+
     s.status = 'cancelled';
     s.cancelledAt = localDateTime();
 
@@ -2340,9 +2468,16 @@ ${money(saleBalance(s))}`
       }
     });
 
-    save(K.sales, sales);
-    save(K.inv, inv);
-    save(K.pay, pay);
+    if (!saveBatch([
+      { key: K.sales, value: sales },
+      { key: K.inv, value: inv },
+      { key: K.pay, value: pay }
+    ])) {
+      inv = previousInventory;
+      sales = previousSales;
+      pay = previousPayments;
+      return;
+    }
 
     renderSales();
     renderInv();
@@ -2642,6 +2777,29 @@ ${money(saleBalance(s))}`
             )
         );
 
+    const totalPurchases = isWalkIn
+      ? customerSales.reduce(
+          (n, s) => n + Number(s.total || 0),
+          0
+        )
+      : customerTotal(cid);
+
+    const totalPayments = isWalkIn
+      ? customerPayments
+          .filter(p => p.status !== 'cancelled')
+          .reduce(
+            (n, p) => n + Number(p.amount || 0),
+            0
+          )
+      : customerPaid(cid);
+
+    const outstanding = isWalkIn
+      ? customerSales.reduce(
+          (n, s) => n + saleBalance(s),
+          0
+        )
+      : balance(cid);
+
     modal(`
       <h2>${esc(c.name)}</h2>
 
@@ -2663,7 +2821,7 @@ ${money(saleBalance(s))}`
         Total purchases:
         <b>
           ${money(
-            customerTotal(cid)
+            totalPurchases
           )}
         </b>
       </p>
@@ -2672,7 +2830,7 @@ ${money(saleBalance(s))}`
         Total payments:
         <b>
           ${money(
-            customerPaid(cid)
+            totalPayments
           )}
         </b>
       </p>
@@ -2681,21 +2839,27 @@ ${money(saleBalance(s))}`
         Outstanding:
         <b>
           ${money(
-            balance(cid)
+            outstanding
           )}
         </b>
       </p>
 
-      <button
-        id="cpay"
-        ${balance(cid) <= 0 ? 'disabled' : ''}
-      >
-        Record Payment
-      </button>
+      ${
+        isWalkIn
+          ? '<p>Anonymous walk-in sales do not have a customer account or statement.</p>'
+          : `
+            <button
+              id="cpay"
+              ${outstanding <= 0 ? 'disabled' : ''}
+            >
+              Record Payment
+            </button>
 
-      <button id="cstatement">
-        Full Statement
-      </button>
+            <button id="cstatement">
+              Full Statement
+            </button>
+          `
+      }
 
       <h3>Purchase History</h3>
 
@@ -2833,11 +2997,13 @@ ${money(saleBalance(s))}`
       }
     `);
 
-    $('#cpay').onclick = () =>
-      customerPay(cid);
+    if (!isWalkIn) {
+      $('#cpay').onclick = () =>
+        customerPay(cid);
 
-    $('#cstatement').onclick = () =>
-      statement(cid);
+      $('#cstatement').onclick = () =>
+        statement(cid);
+    }
 
     $$('[data-cr]').forEach(
       b =>
@@ -2965,6 +3131,8 @@ Payment amount:`
 
     const date = today();
     const time = timeNow();
+    const previousPayments = cloneData(pay);
+    const previousSales = cloneData(sales);
 
     for (const s of openSales) {
       if (remaining <= 0) break;
@@ -2998,13 +3166,21 @@ Payment amount:`
     }
 
     if (remaining > 0) {
+      pay = previousPayments;
+      sales = previousSales;
       return alert(
         'Payment could not be fully allocated.'
       );
     }
 
-    save(K.pay, pay);
-    save(K.sales, sales);
+    if (!saveBatch([
+      { key: K.pay, value: pay },
+      { key: K.sales, value: sales }
+    ])) {
+      pay = previousPayments;
+      sales = previousSales;
+      return;
+    }
 
     renderCus();
     renderCredit();
@@ -3969,6 +4145,7 @@ ${money(balance(cid))}`
         <p>Export a complete Free Ofis backup before moving devices or making major changes.</p>
         <button id="exportData">Export Backup</button>
         <button id="importData">Import Backup</button>
+        <button id="integrityData">Check Data Integrity</button>
         <input id="importFile" type="file" accept="application/json" style="display:none">
         <br><br>
         <button id="resetDemo" type="button">Clear All Free Ofis Data</button>
@@ -3977,6 +4154,7 @@ ${money(balance(cid))}`
 
     $('#exportData').onclick = exportBackup;
     $('#importData').onclick = () => $('#importFile').click();
+    $('#integrityData').onclick = showIntegrityReport;
     $('#importFile').onchange = importBackup;
     $('#resetDemo').onclick = clearAllData;
 
@@ -4074,13 +4252,21 @@ ${money(balance(cid))}`
 
         if (!confirm('Import this backup? Existing Free Ofis data will be replaced by the backup.')) return;
 
-        save(K.inv, d.inventory);
-        save(K.cus, d.customers);
-        save(K.sales, d.sales);
-        save(K.pay, d.payments);
-        save(K.exp, d.expenses);
-        save(K.biz, d.business || {});
-        localStorage.setItem('freeofis_data_version', String(DATA_VERSION));
+        if (!saveBatch([
+          { key: K.inv, value: d.inventory },
+          { key: K.cus, value: d.customers },
+          { key: K.sales, value: d.sales },
+          { key: K.pay, value: d.payments },
+          { key: K.exp, value: d.expenses },
+          { key: K.biz, value: d.business || {} },
+          {
+            key: 'freeofis_data_version',
+            value: DATA_VERSION,
+            raw: true
+          }
+        ])) {
+          return;
+        }
 
         alert('Backup imported. Reloading Free Ofis now.');
         location.reload();
