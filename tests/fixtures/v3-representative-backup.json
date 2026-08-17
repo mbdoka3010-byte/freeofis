@@ -1,0 +1,289 @@
+{
+  "app": "Free Ofis",
+  "version": 3,
+  "exportedAt": "2026-08-17T12:00:00",
+  "data": {
+    "inventory": [
+      {
+        "id": "ITEM-RICE-001",
+        "name": "Rice 5kg",
+        "quantity": 18,
+        "price": 8500,
+        "lowStock": 5,
+        "sku": "RICE-5KG"
+      },
+      {
+        "id": "ITEM-OIL-002",
+        "name": "Cooking Oil 1L",
+        "quantity": 9,
+        "price": 3200
+      }
+    ],
+    "customers": [
+      {
+        "id": "CUS-ADA-001",
+        "name": "Ada Okafor",
+        "phone": "08000000001",
+        "address": "Lagos"
+      },
+      {
+        "id": "CUS-BOLA-002",
+        "name": "Bola Musa",
+        "phone": "08000000002",
+        "address": "Abuja"
+      }
+    ],
+    "sales": [
+      {
+        "id": "SALE-CASH-001",
+        "date": "2026-08-15",
+        "time": "09:15",
+        "transactionAt": "2026-08-15T09:15:00",
+        "customerId": "CUS-ADA-001",
+        "items": [
+          {
+            "productId": "ITEM-RICE-001",
+            "name": "Rice 5kg",
+            "quantity": 1,
+            "unitPrice": 8500,
+            "subtotal": 8500
+          }
+        ],
+        "total": 8500,
+        "paid": 8500,
+        "balance": 0,
+        "method": "cash",
+        "reference": "CASH-DRAWER-A",
+        "notes": "Registered customer cash sale",
+        "status": "completed"
+      },
+      {
+        "id": "SALE-CREDIT-002",
+        "date": "2026-08-15",
+        "time": "10:30",
+        "transactionAt": "2026-08-15T10:30:00",
+        "customerId": "CUS-BOLA-002",
+        "items": [
+          {
+            "productId": "ITEM-RICE-001",
+            "name": "Rice 5kg",
+            "quantity": 2,
+            "unitPrice": 8500,
+            "subtotal": 17000
+          }
+        ],
+        "total": 17000,
+        "paid": 5000,
+        "balance": 12000,
+        "method": "transfer",
+        "reference": "PARTIAL-REF",
+        "notes": "Registered customer partial credit sale",
+        "status": "completed"
+      },
+      {
+        "id": "SALE-WALKIN-003",
+        "date": "2026-08-16",
+        "time": "11:00",
+        "transactionAt": "2026-08-16T11:00:00",
+        "customerId": null,
+        "items": [
+          {
+            "productId": "ITEM-OIL-002",
+            "name": "Cooking Oil 1L",
+            "quantity": 1,
+            "unitPrice": 3200,
+            "subtotal": 3200
+          }
+        ],
+        "total": 3200,
+        "paid": 3200,
+        "balance": 0,
+        "method": "cash",
+        "reference": "",
+        "notes": "",
+        "status": "completed"
+      },
+      {
+        "id": "SALE-MULTI-004",
+        "date": "2026-08-16",
+        "time": "12:00",
+        "transactionAt": "2026-08-16T12:00:00",
+        "customerId": "CUS-ADA-001",
+        "items": [
+          {
+            "productId": "ITEM-RICE-001",
+            "name": "Rice 5kg",
+            "quantity": 1,
+            "unitPrice": 8500,
+            "subtotal": 8500
+          },
+          {
+            "productId": "ITEM-OIL-002",
+            "name": "Cooking Oil 1L",
+            "quantity": 2,
+            "unitPrice": 3200,
+            "subtotal": 6400
+          }
+        ],
+        "total": 14900,
+        "paid": 14900,
+        "balance": 0,
+        "method": "pos",
+        "reference": "POS-004",
+        "notes": "Multi-item fully paid sale",
+        "status": "completed"
+      },
+      {
+        "id": "SALE-ORPHAN-005",
+        "date": "2026-08-16",
+        "time": "13:00",
+        "transactionAt": "2026-08-16T13:00:00",
+        "customerId": "CUS-ARCHIVED-999",
+        "items": [
+          {
+            "productId": "ITEM-OIL-002",
+            "name": "Cooking Oil 1L",
+            "quantity": 1,
+            "unitPrice": 3200,
+            "subtotal": 3200
+          }
+        ],
+        "total": 3200,
+        "paid": 0,
+        "balance": 3200,
+        "method": "credit",
+        "reference": "",
+        "notes": "Orphaned historical customer reference",
+        "status": "completed"
+      },
+      {
+        "id": "SALE-CANCELLED-006",
+        "date": "2026-08-16",
+        "time": "14:00",
+        "transactionAt": "2026-08-16T14:00:00",
+        "customerId": "CUS-ADA-001",
+        "items": [
+          {
+            "productId": "ITEM-RICE-001",
+            "name": "Rice 5kg",
+            "quantity": 1,
+            "unitPrice": 8500,
+            "subtotal": 8500
+          }
+        ],
+        "total": 8500,
+        "paid": 0,
+        "balance": 8500,
+        "method": "cash",
+        "reference": "CANCEL-006",
+        "notes": "Cancelled sale retained for history",
+        "status": "cancelled",
+        "cancelledAt": "2026-08-16T14:05:00"
+      },
+      {
+        "id": "SALE-LEGACY-DATE-007",
+        "date": "2026-07-31",
+        "customerId": "CUS-ADA-001",
+        "items": [
+          {
+            "productId": "ITEM-OIL-002",
+            "name": "Cooking Oil 1L",
+            "quantity": 1,
+            "unitPrice": 3000,
+            "subtotal": 3000
+          }
+        ],
+        "total": 3000,
+        "paid": 3000,
+        "balance": 0,
+        "method": "cash",
+        "status": "completed"
+      }
+    ],
+    "payments": [
+      {
+        "id": "PAY-CASH-001",
+        "customerId": "CUS-ADA-001",
+        "saleId": "SALE-CASH-001",
+        "amount": 8500,
+        "date": "2026-08-15",
+        "time": "09:15",
+        "transactionAt": "2026-08-15T09:15:00",
+        "method": "cash",
+        "reference": "CASH-DRAWER-A",
+        "status": "completed"
+      },
+      {
+        "id": "PAY-PARTIAL-002",
+        "customerId": "CUS-BOLA-002",
+        "saleId": "SALE-CREDIT-002",
+        "amount": 5000,
+        "date": "2026-08-15",
+        "time": "10:30",
+        "transactionAt": "2026-08-15T10:30:00",
+        "method": "transfer",
+        "reference": "PARTIAL-REF",
+        "status": "completed"
+      },
+      {
+        "id": "PAY-WALKIN-003",
+        "customerId": null,
+        "saleId": "SALE-WALKIN-003",
+        "amount": 3200,
+        "date": "2026-08-16",
+        "time": "11:00",
+        "transactionAt": "2026-08-16T11:00:00",
+        "method": "cash",
+        "reference": "",
+        "status": "completed"
+      },
+      {
+        "id": "PAY-MULTI-004",
+        "customerId": "CUS-ADA-001",
+        "saleId": "SALE-MULTI-004",
+        "amount": 14900,
+        "date": "2026-08-16",
+        "time": "12:00",
+        "transactionAt": "2026-08-16T12:00:00",
+        "method": "pos",
+        "reference": "POS-004",
+        "status": "completed"
+      },
+      {
+        "id": "PAY-CANCELLED-006",
+        "customerId": "CUS-ADA-001",
+        "saleId": "SALE-CANCELLED-006",
+        "amount": 8500,
+        "date": "2026-08-16",
+        "time": "14:00",
+        "transactionAt": "2026-08-16T14:00:00",
+        "method": "cash",
+        "reference": "CANCEL-006",
+        "status": "cancelled",
+        "cancelledAt": "2026-08-16T14:05:00"
+      }
+    ],
+    "expenses": [
+      {
+        "id": "EXP-RENT-001",
+        "description": "Shop rent",
+        "amount": 50000,
+        "date": "2026-08-01",
+        "time": "08:00",
+        "transactionAt": "2026-08-01T08:00:00"
+      },
+      {
+        "id": "EXP-LEGACY-002",
+        "description": "Legacy transport",
+        "amount": 2500,
+        "date": "2026-07-30"
+      }
+    ],
+    "business": {
+      "name": "Synthetic Free Ofis Store",
+      "address": "Fixture only",
+      "phone": "00000000000",
+      "email": "fixture@example.invalid"
+    }
+  }
+}
