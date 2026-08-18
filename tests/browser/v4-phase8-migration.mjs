@@ -33,7 +33,7 @@ button.onclick=async()=>{button.disabled=true;const log=[];let app;try{
   check(reconciliation.readyForAcceptance&&reconciliation.results.every(x=>x.status==='reconciled'),'reconciliation');
   log.push('PASS counts, quantities, sales, payments, AR and expense reconciliation');
   const cash=(await app.persistence.getAll(V4_STORES.ledgerAccounts)).find(x=>x.systemRole==='cash_on_hand');
-  const opening=await migration.recordOpeningPosition(run.id,{actor:'phase8-browser',balances:[{accountId:cash.id,amountMinor:50000,verifiedAt:'2026-08-18T10:00:00Z',verificationReference:'manual count'}]},app.services.finance);
+  const opening=await migration.recordOpeningPosition(run.id,{actor:'phase8-browser',receivables:{status:'not_applicable',reason:'Synthetic rehearsal has no verified opening AR'},payables:{status:'not_applicable',reason:'Synthetic rehearsal has no verified opening AP'},balances:[{accountId:cash.id,amountMinor:50000,verifiedAt:'2026-08-18T10:00:00Z',verificationReference:'manual count'}]},app.services.finance);
   check(opening.status==='posted'&&(await app.services.finance.trialBalance(ctx.businessId)).balanced,'opening position');
   log.push('PASS verified balanced opening position');
   const warnings=[...new Set(reconciliation.warnings.map(x=>x.code))];

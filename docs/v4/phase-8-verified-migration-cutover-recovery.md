@@ -51,7 +51,9 @@ Acceptance requires:
 
 nativeOperationsStarted is the commit boundary. Before it, accepted/cut-over rehearsal evidence can be rolled back while retained for audit. After it, simple rollback is rejected as unsafe. Phase 8 does not set this flag or switch production entry points outside explicit service calls.
 
-Maintenance mode is represented as a cutover prerequisite/design concern only. A future authorized procedure must freeze V3 writes before its final snapshot and keep them frozen until cutover or rollback completes.
+Maintenance mode is an enforced service-layer cutover prerequisite. An accepted run must record an actor, freeze timestamp and freeze reference through the explicit maintenance activation operation. Final cutover revalidates that evidence and persists `cutover_completed`, active maintenance state and the same freeze evidence atomically. The development UI remains intentionally unwired and disabled; no production maintenance or cutover action is automatic.
+
+If a browser/process interruption leaves a run in `migrating`, retry is allowed only when no run-owned migration artifacts committed, which proves the main migration transaction did not commit. An interrupted `reconciling` run discards only that run's partial reconciliation evidence and recomputes it from deterministic migrated records. Ambiguous migration evidence fails closed instead of being deleted or replayed.
 
 ## Mapping rules
 
@@ -67,9 +69,9 @@ Expenses retain source identity, date, amount, description/category, reliable me
 
 ## Finance opening position
 
-Finance starts at the configured cutover instant from verified balances, not reconstructed historical journals. Cash and each Bank/Financial Account require amount, verification timestamp, reference and actor evidence. Verified AR/AP/known-cost inventory or other balances may be supplied. The balancing side uses the semantic opening_balance_equity account, never Retained Earnings.
+Finance starts at the configured cutover instant from verified balances, not reconstructed historical journals. Cash and each Bank/Financial Account require amount, verification timestamp, reference and actor evidence. Opening AR and AP each require an explicit state: `verified`, `not_applicable`, or `unresolved`. Verified values require amount, timestamp, reference and actor and must match their opening-journal account line; not-applicable requires a zero amount, reason and actor; unresolved evidence is retained but blocks acceptance and cutover. Known-cost inventory or other verified balances may also be supplied. The balancing side uses the semantic opening_balance_equity account, never Retained Earnings.
 
-The opening journal is balanced, idempotent and linked to the run. Unknown inventory cost is reported as unknown coverage; it is not posted as zero. Readiness also requires a balanced Trial Balance and Balance Sheet.
+The opening journal is balanced, idempotent and linked to the run. If interruption occurs after the deterministic opening journal is drafted or posted but before its batch/run link is stored, retry validates/posts that journal and recreates the missing idempotency batch rather than duplicating it. Unknown inventory cost is reported as unknown coverage; it is not posted as zero. Readiness also requires a balanced Trial Balance and Balance Sheet.
 
 ## Reconciliation and readiness
 
@@ -78,6 +80,8 @@ Durable results compare Products, per-product and total quantity, Customers, Sal
 Unexplained identity, quantity, sales-unit/value, accepted-AR, schema, checksum, write, opening-journal, source-mutation, engine or rehearsal discrepancies are blockers. Unknown costs, unavailable historical Supplier/location/actor/method, ambiguous categories, unknown ownership and non-financial orphan references are warnings. Warnings proceed only when recorded as explicitly accepted.
 
 Manual resolutions point to a manifest item and record issue, decision, optional destination, reason, actor and timestamp. They can update disposition evidence but never raw snapshot bytes.
+
+Acceptance and final cutover revalidate the immutable snapshot and recompute every canonical manifest source checksum. Final cutover then revalidates required reconciliation records, blockers, accepted warnings, the opening journal, Trial Balance, Balance Sheet, Cash, every Bank account, opening AR/AP and inventory valuation coverage. The cutover state transition is a single IndexedDB transaction: failure leaves the prior accepted, maintenance-active state unchanged.
 
 ## Rehearsal and production procedure
 
