@@ -4144,6 +4144,7 @@ ${money(balance(cid))}`
         <h3>Data Safety</h3>
         <p>Export a complete Free Ofis backup before moving devices or making major changes.</p>
         <button id="exportData">Export Backup</button>
+        <button id="exportMigrationSnapshot">Export V3 Snapshot for V4 Rehearsal</button>
         <button id="importData">Import Backup</button>
         <button id="integrityData">Check Data Integrity</button>
         <input id="importFile" type="file" accept="application/json" style="display:none">
@@ -4153,6 +4154,7 @@ ${money(balance(cid))}`
     `;
 
     $('#exportData').onclick = exportBackup;
+    $('#exportMigrationSnapshot').onclick = () => window.FreeOfisV3SnapshotExporter.exportWithPrompts();
     $('#importData').onclick = () => $('#importFile').click();
     $('#integrityData').onclick = showIntegrityReport;
     $('#importFile').onchange = importBackup;
