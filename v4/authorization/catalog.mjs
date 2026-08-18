@@ -54,6 +54,14 @@ export const PERMISSION_CATALOG = Object.freeze([
   ['staff.manage', 'staff', 'Manage staff and access'],
   ['approvals.review', 'approvals', 'Review approvals'],
   ['settings.manage', 'settings', 'Manage business settings']
+  ,['migration.view', 'migration', 'View migration evidence']
+  ,['migration.preview', 'migration', 'Preview migration']
+  ,['migration.backup', 'migration', 'Export migration backup']
+  ,['migration.execute', 'migration', 'Execute controlled migration']
+  ,['migration.reconcile', 'migration', 'Reconcile migration']
+  ,['migration.accept', 'migration', 'Accept reconciled migration']
+  ,['migration.cutover', 'migration', 'Complete controlled cutover']
+  ,['migration.rollback', 'migration', 'Record pre-native-operation rollback']
 ].map(([code, module, description]) => Object.freeze({ code, module, description })));
 
 const ALL = PERMISSION_CATALOG.map(permission => permission.code);
@@ -97,5 +105,5 @@ export const SYSTEM_ROLE_DEFINITIONS = Object.freeze([
 ].map(role => Object.freeze({ ...role, permissionCodes: Object.freeze(role.permissionCodes) })));
 
 export const PERMISSION_CODES = Object.freeze(ALL);
-export const PERMISSION_CATALOG_VERSION = 5;
-export const SYSTEM_ROLE_TEMPLATE_VERSION = 5;
+export const PERMISSION_CATALOG_VERSION = 6;
+export const SYSTEM_ROLE_TEMPLATE_VERSION = 6;

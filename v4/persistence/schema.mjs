@@ -1,5 +1,5 @@
 export const V4_DATABASE_NAME = 'freeofis_v4';
-export const V4_DATABASE_VERSION = 6;
+export const V4_DATABASE_VERSION = 7;
 
 export const V4_STORES = Object.freeze({
   accounts: 'accounts',
@@ -39,7 +39,10 @@ export const V4_STORES = Object.freeze({
   financialAccounts: 'financialAccounts', financeTransactions: 'financeTransactions',
   expensesV4: 'expensesV4', accountingPeriods: 'accountingPeriods',
   openingBalanceBatches: 'openingBalanceBatches',
-  financePostingCheckpoints: 'financePostingCheckpoints', financePostingFailures: 'financePostingFailures'
+  financePostingCheckpoints: 'financePostingCheckpoints', financePostingFailures: 'financePostingFailures',
+  migrationRuns: 'migrationRuns', migrationSnapshots: 'migrationSnapshots',
+  migrationManifestEntries: 'migrationManifestEntries', migrationResolutions: 'migrationResolutions',
+  migrationReconciliations: 'migrationReconciliations'
 });
 
 export const V4_STORE_DEFINITIONS = Object.freeze([
@@ -266,6 +269,13 @@ export const V4_STORE_DEFINITIONS = Object.freeze([
     ['financePostingCheckpoints',[['byPostingIdentity',['businessId','sourceModule','postingRuleCode']]]],
     ['financePostingFailures',[['byBusinessId','businessId'],['byPostingIdentity',['businessId','sourceModule','sourceEntityType','sourceEntityId','postingRuleCode','postingRuleVersion']]]]
   ].map(([name,indexes])=>({name:V4_STORES[name],options:{keyPath:'id'},indexes:indexes.map(([indexName,keyPath])=>({name:indexName,keyPath,options:{unique:['byBusinessAndCode','byBusinessAndSystemRole','byResolutionKey','byJournalNumber','byPostingIdentity','byReversalOfId','byBusinessAndRange','byIdempotency'].includes(indexName)}}))}))
+  ,...[
+    ['migrationRuns',[['bySnapshotId','snapshotId'],['byBusinessId','businessId'],['byMigrationIdentity',['snapshotId','businessId','operatingUnitId','inventoryLocationId']]]],
+    ['migrationSnapshots',[['byAggregateChecksum','aggregateChecksum'],['bySourceSystem','sourceSystem']]],
+    ['migrationManifestEntries',[['byMigrationRunId','migrationRunId'],['bySourceIdentity',['migrationRunId','sourceEntityType','sourceEntityId']],['byStatus',['migrationRunId','status']]]],
+    ['migrationResolutions',[['byMigrationRunId','migrationRunId'],['byManifestEntryId','manifestEntryId']]],
+    ['migrationReconciliations',[['byMigrationRunId','migrationRunId'],['byType',['migrationRunId','reconciliationType']]]]
+  ].map(([name,indexes])=>({name:V4_STORES[name],options:{keyPath:'id'},indexes:indexes.map(([indexName,keyPath])=>({name:indexName,keyPath,options:{unique:['byMigrationIdentity','byAggregateChecksum','bySourceIdentity','byManifestEntryId','byType'].includes(indexName)}}))}))
 ]);
 
 function hasName(collection, name) {
