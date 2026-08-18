@@ -1,0 +1,10 @@
+import{V3_STORAGE_KEYS}from'../legacy/legacy-reader.mjs';
+
+export const REHEARSAL_DATABASE_NAME='freeofis_v4_phase8_operator_rehearsal';
+export const REHEARSAL_KEYS=Object.freeze(Object.values(V3_STORAGE_KEYS));
+
+const requiredText=(value,name)=>{if(typeof value!=='string'||!value.trim())throw new Error(`Snapshot ${name} is required.`);return value};
+
+export function parseRehearsalSnapshot(text){let input;try{input=JSON.parse(text)}catch{throw new Error('Snapshot file is not valid JSON.')}if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('Snapshot file must contain an object.');const raw=input.rawValues;if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Snapshot rawValues object is required.');const supplied=Object.keys(raw),missing=REHEARSAL_KEYS.filter(key=>!Object.prototype.hasOwnProperty.call(raw,key)),extra=supplied.filter(key=>!REHEARSAL_KEYS.includes(key));if(missing.length)throw new Error(`Snapshot key missing: ${missing.join(', ')}`);if(extra.length||supplied.length!==REHEARSAL_KEYS.length)throw new Error(`Snapshot contains unexpected rawValues keys: ${extra.join(', ')}`);for(const key of REHEARSAL_KEYS)if(raw[key]!==null&&typeof raw[key]!=='string')throw new Error(`Snapshot raw value must be a string or null: ${key}`);if(raw[V3_STORAGE_KEYS.dataVersion]!=='3')throw new Error('Snapshot must contain V3 data version 3.');const createdAt=requiredText(input.createdAt,'createdAt');if(Number.isNaN(Date.parse(createdAt)))throw new Error('Snapshot createdAt must be a valid timestamp.');return Object.freeze({rawValues:Object.freeze(Object.fromEntries(REHEARSAL_KEYS.map(key=>[key,raw[key]]))),createdBy:requiredText(input.createdBy,'createdBy'),buildReference:requiredText(input.buildReference,'buildReference'),createdAt})}
+
+export function deleteRehearsalDatabase(indexedDb=globalThis.indexedDB){return new Promise((resolve,reject)=>{const request=indexedDb.deleteDatabase(REHEARSAL_DATABASE_NAME);request.onsuccess=()=>resolve();request.onerror=()=>reject(request.error);request.onblocked=()=>reject(new Error('Close other rehearsal tabs before resetting the rehearsal database.'))})}
