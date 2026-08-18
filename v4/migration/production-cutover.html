@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <title>Free Ofis V4 Fresh Production Activation</title>
+  <link rel="stylesheet" href="./rehearsal.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>FREE OFIS V4 PRODUCTION CONTROL</h1>
+    <strong>FRESH V4 START — NO V3 MIGRATION</strong>
+    <p>Database: <code id="database"></code></p>
+  </header>
+  <div id="message" role="status"></div>
+  <section>
+    <h2>Fresh-start verification</h2>
+    <button id="fresh-inspect">Verify all fresh-start safety checks</button>
+    <button id="fresh-reset" disabled>RESET V4 DEVELOPMENT DATA FOR FRESH PRODUCTION</button>
+    <button id="fresh-repair" disabled>REPAIR FRESH-START PRODUCTION SCOPE</button>
+    <pre id="fresh-summary"></pre>
+    <details><summary>Scope normalization evidence</summary><h3>Before</h3><pre id="scope-before"></pre><h3>After</h3><pre id="scope-after"></pre></details>
+  </section>
+  <section>
+    <h2 id="fresh-result"></h2>
+    <label><input id="fresh-understanding" type="checkbox" disabled> I understand that V3 historical data will not be migrated into this V4 production instance.</label>
+    <button id="fresh-activate" disabled>ACTIVATE FRESH V4 PRODUCTION</button>
+  </section>
+  <p><a id="v4-link" href="../app/">Open normal Free Ofis V4</a></p>
+</main>
+<script type="module" src="./production-cutover-ui.mjs"></script>
+</body>
+</html>
