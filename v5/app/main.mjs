@@ -1,0 +1,4 @@
+import { createV5Platform } from '../platform/platform.mjs';
+import { V5_DATABASE_NAME, V5_DATABASE_VERSION } from '../persistence/schema.mjs';
+const status=document.querySelector('#status'),message=document.querySelector('#message'),workspaces=document.querySelector('#workspaces');
+try{const platform=await createV5Platform({indexedDB}),definitions=await platform.listWorkspaceDefinitions();status.innerHTML=`<dt>Database</dt><dd>${V5_DATABASE_NAME}</dd><dt>Schema</dt><dd>Version ${V5_DATABASE_VERSION}</dd><dt>Runtime</dt><dd>Fresh V5 — independent of V3/V4 storage</dd>`;workspaces.innerHTML=definitions.filter(item=>item.standard).map(item=>`<article class="card"><strong>${item.name}</strong><span>${item.type}</span></article>`).join('');message.textContent='Platform foundation ready.';addEventListener('beforeunload',()=>platform.close())}catch(error){message.textContent=`Could not open V5 foundation: ${error.message}`}
