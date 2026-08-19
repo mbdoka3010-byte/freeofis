@@ -10,17 +10,19 @@ import { createOfficeService } from './office.mjs';
 import { createSchoolService } from './school.mjs';
 import { createStudioService } from './studio.mjs';
 import { createSpaceService } from './space.mjs';
+import { createIntegrationService } from './integration.mjs';
 
 const permissionCodes = new Set(PERMISSIONS.map(item => item.code));
 const safeMetadata = metadata => Object.fromEntries(Object.entries(metadata || {}).filter(([key]) => !/secret|password|token|content/i.test(key)));
 
 export async function createV5Platform(options = {}) {
   const persistence = options.persistence || await V5IndexedDbPersistence.open(options.indexedDB || globalThis.indexedDB, { databaseName: options.databaseName || V5_DATABASE_NAME });
-  const context = options.context || {}, sessions = createSessionService(persistence, { ...context, cryptoApi: options.cryptoApi || context.cryptoApi || globalThis.crypto }), sharedWork=createSharedWorkService({persistence,sessions,context}), capture=createCaptureService({persistence,sessions,sharedWork,context}), office=createOfficeService({persistence,sessions,sharedWork,capture,context}), school=createSchoolService({persistence,sessions,sharedWork,capture,context}), studio=createStudioService({persistence,sessions,sharedWork,capture,context}), space=createSpaceService({persistence,sessions,sharedWork,context});
+  const context = options.context || {}, sessions = createSessionService(persistence, { ...context, cryptoApi: options.cryptoApi || context.cryptoApi || globalThis.crypto }), sharedWork=createSharedWorkService({persistence,sessions,context}), capture=createCaptureService({persistence,sessions,sharedWork,context}), office=createOfficeService({persistence,sessions,sharedWork,capture,context}), school=createSchoolService({persistence,sessions,sharedWork,capture,context}), studio=createStudioService({persistence,sessions,sharedWork,capture,context}), space=createSpaceService({persistence,sessions,sharedWork,context}), integration=createIntegrationService({persistence,sessions,sharedWork,context});
   const event = (kind, input) => createEvent(kind, { ...input, metadata: safeMetadata(input.metadata) }, context);
   async function actor(token) { const valid = await sessions.validate(token); if (!valid) throw Error('AUTHENTICATION_REQUIRED'); return valid.user; }
   async function permitted(userId, organisationId, permissionCode, unitId = null) { if (!permissionCodes.has(permissionCode) || !await can(persistence, { userId, organisationId, permissionCode, unitId })) throw Error('PERMISSION_DENIED'); }
   async function validateUnitScope(organisationId, unitIds = []) { for (const unitId of unitIds) { const unit = await persistence.get(V5_STORES.organisationUnits, unitId); if (!unit || unit.status !== 'active' || unit.organisationId !== organisationId) throw Error('ROLE_UNIT_SCOPE_INVALID'); } }
+  async function workspaceWithinContext(workspace,activeContext){if(!activeContext.unitId||!workspace.unitId||workspace.unitId===activeContext.unitId)return true;let unit=await persistence.get(V5_STORES.organisationUnits,activeContext.unitId),visited=new Set();while(unit&&!visited.has(unit.id)){if(unit.parentUnitId===workspace.unitId)return true;visited.add(unit.id);unit=unit.parentUnitId?await persistence.get(V5_STORES.organisationUnits,unit.parentUnitId):null}return false}
 
   let businessPromise;
   const api = {
@@ -31,6 +33,7 @@ export async function createV5Platform(options = {}) {
     school,
     studio,
     space,
+    integration,
     async loadBusiness() { return businessPromise ||= import('./business.mjs').then(({ createBusinessService }) => createBusinessService({ persistence, sessions, sharedWork, context })); },
     async initialize() {
       await persistence.runTransaction([V5_STORES.meta, V5_STORES.workspaceDefinitions], 'readwrite', async tx => {
@@ -71,7 +74,7 @@ export async function createV5Platform(options = {}) {
       const user = await actor(token), contexts = await api.listContexts(token), activeContext = contexts.find(item => item.key === selectedContext?.key); if (!activeContext) throw Error('CONTEXT_ACCESS_DENIED');
       const definitions = await persistence.getAll(V5_STORES.workspaceDefinitions), instances = await persistence.getAll(V5_STORES.workspaceInstances), output = [];
       for (const workspace of instances) {
-        const matches = activeContext.kind === 'personal' ? workspace.ownerType === 'personal' && workspace.ownerId === user.id : workspace.ownerType === 'organisation' && workspace.organisationId === activeContext.organisationId && (!activeContext.unitId || !workspace.unitId || workspace.unitId === activeContext.unitId);
+        const matches = activeContext.kind === 'personal' ? workspace.ownerType === 'personal' && workspace.ownerId === user.id : workspace.ownerType === 'organisation' && workspace.organisationId === activeContext.organisationId && await workspaceWithinContext(workspace,activeContext);
         if (!matches || workspace.status !== 'active' || !await canAccessOwnership(persistence, { userId: user.id, ownerType: workspace.ownerType, ownerId: workspace.ownerId, organisationId: workspace.organisationId, unitId: workspace.unitId, permissionCode: 'workspaces.view' })) continue;
         const definition = definitions.find(item => item.id === workspace.definitionId && item.status === 'active'); if (definition) output.push({ workspace, definition });
       }
