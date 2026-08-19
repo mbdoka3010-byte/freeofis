@@ -22,6 +22,7 @@ export async function createV5Platform(options = {}) {
   async function permitted(userId, organisationId, permissionCode, unitId = null) { if (!permissionCodes.has(permissionCode) || !await can(persistence, { userId, organisationId, permissionCode, unitId })) throw Error('PERMISSION_DENIED'); }
   async function validateUnitScope(organisationId, unitIds = []) { for (const unitId of unitIds) { const unit = await persistence.get(V5_STORES.organisationUnits, unitId); if (!unit || unit.status !== 'active' || unit.organisationId !== organisationId) throw Error('ROLE_UNIT_SCOPE_INVALID'); } }
 
+  let businessPromise;
   const api = {
     sessions,
     sharedWork,
@@ -30,7 +31,7 @@ export async function createV5Platform(options = {}) {
     school,
     studio,
     space,
-    async loadBusiness() { const { createBusinessService } = await import('./business.mjs'); return createBusinessService({ persistence, sessions, context }); },
+    async loadBusiness() { return businessPromise ||= import('./business.mjs').then(({ createBusinessService }) => createBusinessService({ persistence, sessions, sharedWork, context })); },
     async initialize() {
       await persistence.runTransaction([V5_STORES.meta, V5_STORES.workspaceDefinitions], 'readwrite', async tx => {
         const marker = await tx.get(V5_STORES.meta, 'platformFoundation');

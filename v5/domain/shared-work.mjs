@@ -1,6 +1,6 @@
 import { createId, ownership, timestamp } from './foundation.mjs';
 export const SHARED_ENTITY_TYPES=Object.freeze(['person','task','event','project','note','document','file','record']);
-export const RELATIONSHIP_ENTITY_TYPES=Object.freeze([...SHARED_ENTITY_TYPES,'officeCorrespondence','officeDecision']);
+export const RELATIONSHIP_ENTITY_TYPES=Object.freeze([...SHARED_ENTITY_TYPES,'officeCorrespondence','officeDecision','businessCustomer','businessSupplier','businessProduct','sale','purchase','goodsReceipt','supplierInvoice','expense','journal']);
 export const STORE_BY_TYPE=Object.freeze({person:'people',task:'tasks',event:'events',project:'projects',note:'notes',document:'documents',file:'files',record:'records'});
 const required=(value,name)=>{const text=String(value||'').trim();if(!text)throw TypeError(`${name} is required.`);return text};
 const iso=(value,name,optional=true)=>{if(value==null&&optional)return null;const date=new Date(value);if(Number.isNaN(date.valueOf()))throw TypeError(`${name} is invalid.`);return date.toISOString()};
