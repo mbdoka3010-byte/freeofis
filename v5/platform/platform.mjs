@@ -30,6 +30,7 @@ export async function createV5Platform(options = {}) {
     school,
     studio,
     space,
+    async loadBusiness() { const { createBusinessService } = await import('./business.mjs'); return createBusinessService({ persistence, sessions, context }); },
     async initialize() {
       await persistence.runTransaction([V5_STORES.meta, V5_STORES.workspaceDefinitions], 'readwrite', async tx => {
         const marker = await tx.get(V5_STORES.meta, 'platformFoundation');

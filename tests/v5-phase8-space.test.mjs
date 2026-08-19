@@ -25,7 +25,7 @@ async function user(platform, name) {
   return { user: registered.user, token: await platform.sessions.create(registered.user.id) };
 }
 
-assert.equal(V5_DATABASE_VERSION, 7, 'My Space reuses the additive Phase 1-7 schema');
+assert.equal(V5_DATABASE_VERSION, 8, 'My Space remains preserved by the additive Business schema');
 
 // Shared Tasks, Events, Notes, Projects, Files/Documents and Records power a useful personal home.
 {
