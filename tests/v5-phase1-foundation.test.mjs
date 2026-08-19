@@ -12,7 +12,7 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),stamp
 async function setup(){const persistence=new MemoryV5Persistence(),platform=await createV5Platform({persistence,context,cryptoApi:globalThis.crypto}),registered=await platform.registerUser({displayName:'Owner',email:`owner-${crypto.randomUUID()}@example.test`}),token=await platform.sessions.create(registered.user.id);return{persistence,platform,...registered,token}}
 async function user(platform,name){const registered=await platform.registerUser({displayName:name,email:`${name}-${crypto.randomUUID()}@example.test`}),token=await platform.sessions.create(registered.user.id);return{...registered,token}}
 
-assert.equal(V5_DATABASE_NAME,'freeofis_v5');assert.equal(V5_DATABASE_VERSION,5);assert.doesNotMatch(fs.readFileSync(path.join(root,'v5/platform/platform.mjs'),'utf8')+fs.readFileSync(path.join(root,'v5/persistence/schema.mjs'),'utf8'),/v3|v4|freeofis_v4|localStorage/i);
+assert.equal(V5_DATABASE_NAME,'freeofis_v5');assert.equal(V5_DATABASE_VERSION,6);assert.doesNotMatch(fs.readFileSync(path.join(root,'v5/platform/platform.mjs'),'utf8')+fs.readFileSync(path.join(root,'v5/persistence/schema.mjs'),'utf8'),/v3|v4|freeofis_v4|localStorage/i);
 
 // Registry and fresh persistence.
 {const s=await setup(),definitions=await s.persistence.getAll(V5_STORES.workspaceDefinitions);assert.deepEqual(definitions.filter(x=>x.standard).map(x=>x.code).sort(),STANDARD_WORKSPACES.map(x=>x.code).sort());assert.equal((await s.persistence.get(V5_STORES.meta,'platformFoundation')).databaseName,'freeofis_v5')}

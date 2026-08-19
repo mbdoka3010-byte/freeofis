@@ -7,13 +7,14 @@ import { createSessionService } from '../security/sessions.mjs';
 import { createSharedWorkService } from './shared-work.mjs';
 import { createCaptureService } from './capture.mjs';
 import { createOfficeService } from './office.mjs';
+import { createSchoolService } from './school.mjs';
 
 const permissionCodes = new Set(PERMISSIONS.map(item => item.code));
 const safeMetadata = metadata => Object.fromEntries(Object.entries(metadata || {}).filter(([key]) => !/secret|password|token|content/i.test(key)));
 
 export async function createV5Platform(options = {}) {
   const persistence = options.persistence || await V5IndexedDbPersistence.open(options.indexedDB || globalThis.indexedDB, { databaseName: options.databaseName || V5_DATABASE_NAME });
-  const context = options.context || {}, sessions = createSessionService(persistence, { ...context, cryptoApi: options.cryptoApi || context.cryptoApi || globalThis.crypto }), sharedWork=createSharedWorkService({persistence,sessions,context}), capture=createCaptureService({persistence,sessions,sharedWork,context}), office=createOfficeService({persistence,sessions,sharedWork,capture,context});
+  const context = options.context || {}, sessions = createSessionService(persistence, { ...context, cryptoApi: options.cryptoApi || context.cryptoApi || globalThis.crypto }), sharedWork=createSharedWorkService({persistence,sessions,context}), capture=createCaptureService({persistence,sessions,sharedWork,context}), office=createOfficeService({persistence,sessions,sharedWork,capture,context}), school=createSchoolService({persistence,sessions,sharedWork,capture,context});
   const event = (kind, input) => createEvent(kind, { ...input, metadata: safeMetadata(input.metadata) }, context);
   async function actor(token) { const valid = await sessions.validate(token); if (!valid) throw Error('AUTHENTICATION_REQUIRED'); return valid.user; }
   async function permitted(userId, organisationId, permissionCode, unitId = null) { if (!permissionCodes.has(permissionCode) || !await can(persistence, { userId, organisationId, permissionCode, unitId })) throw Error('PERMISSION_DENIED'); }
@@ -24,6 +25,7 @@ export async function createV5Platform(options = {}) {
     sharedWork,
     capture,
     office,
+    school,
     async initialize() {
       await persistence.runTransaction([V5_STORES.meta, V5_STORES.workspaceDefinitions], 'readwrite', async tx => {
         const marker = await tx.get(V5_STORES.meta, 'platformFoundation');
