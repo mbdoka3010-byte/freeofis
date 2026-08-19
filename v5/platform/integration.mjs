@@ -12,7 +12,7 @@ const sharedFields={
   document:x=>({title:x.title,summary:x.summary,documentType:x.documentType,version:1}),
   record:x=>({title:x.title,recordType:x.recordType,reference:x.reference,recordedAt:x.recordedAt,retention:x.retention})
 };
-const storeByRelationshipType={...STORE_BY_TYPE,businessCustomer:V5_STORES.businessCustomers,businessSupplier:V5_STORES.businessSuppliers,businessProduct:V5_STORES.businessProducts,sale:V5_STORES.salesOrders,purchase:V5_STORES.purchaseOrders,goodsReceipt:V5_STORES.goodsReceipts,supplierInvoice:V5_STORES.supplierInvoices,expense:V5_STORES.businessExpenses,journal:V5_STORES.businessJournalEntries};
+const storeByRelationshipType={...STORE_BY_TYPE,officeCorrespondence:V5_STORES.officeCorrespondence,officeDecision:V5_STORES.officeDecisions,businessCustomer:V5_STORES.businessCustomers,businessSupplier:V5_STORES.businessSuppliers,businessProduct:V5_STORES.businessProducts,sale:V5_STORES.salesOrders,purchase:V5_STORES.purchaseOrders,goodsReceipt:V5_STORES.goodsReceipts,supplierInvoice:V5_STORES.supplierInvoices,expense:V5_STORES.businessExpenses,journal:V5_STORES.businessJournalEntries};
 const owns=(a,b)=>a.ownerType===b.ownerType&&a.ownerId===b.ownerId&&a.organisationId===b.organisationId;
 
 export function createIntegrationService({persistence,sessions,sharedWork,context={}}){
