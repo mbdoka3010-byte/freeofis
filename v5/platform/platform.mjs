@@ -4,13 +4,14 @@ import { V5IndexedDbPersistence } from '../persistence/indexeddb.mjs';
 import { can, canAccessOwnership } from '../security/authorization.mjs';
 import { PERMISSIONS, ROLE_TEMPLATES, STANDARD_WORKSPACES } from '../security/catalog.mjs';
 import { createSessionService } from '../security/sessions.mjs';
+import { createSharedWorkService } from './shared-work.mjs';
 
 const permissionCodes = new Set(PERMISSIONS.map(item => item.code));
 const safeMetadata = metadata => Object.fromEntries(Object.entries(metadata || {}).filter(([key]) => !/secret|password|token|content/i.test(key)));
 
 export async function createV5Platform(options = {}) {
   const persistence = options.persistence || await V5IndexedDbPersistence.open(options.indexedDB || globalThis.indexedDB, { databaseName: options.databaseName || V5_DATABASE_NAME });
-  const context = options.context || {}, sessions = createSessionService(persistence, { ...context, cryptoApi: options.cryptoApi || context.cryptoApi || globalThis.crypto });
+  const context = options.context || {}, sessions = createSessionService(persistence, { ...context, cryptoApi: options.cryptoApi || context.cryptoApi || globalThis.crypto }), sharedWork=createSharedWorkService({persistence,sessions,context});
   const event = (kind, input) => createEvent(kind, { ...input, metadata: safeMetadata(input.metadata) }, context);
   async function actor(token) { const valid = await sessions.validate(token); if (!valid) throw Error('AUTHENTICATION_REQUIRED'); return valid.user; }
   async function permitted(userId, organisationId, permissionCode, unitId = null) { if (!permissionCodes.has(permissionCode) || !await can(persistence, { userId, organisationId, permissionCode, unitId })) throw Error('PERMISSION_DENIED'); }
@@ -18,6 +19,7 @@ export async function createV5Platform(options = {}) {
 
   const api = {
     sessions,
+    sharedWork,
     async initialize() {
       await persistence.runTransaction([V5_STORES.meta, V5_STORES.workspaceDefinitions], 'readwrite', async tx => {
         const marker = await tx.get(V5_STORES.meta, 'platformFoundation');
